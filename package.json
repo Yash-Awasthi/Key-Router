@@ -6,5 +6,6 @@
     "test": "node --test",
     "deploy": "npx wrangler deploy",
     "setup": "npx wrangler deploy && npx wrangler secret put ADMIN_PASSWORD"
-  }
+  },
+  "license": "MIT"
 }

@@ -61,3 +61,7 @@ The gateway does not cap spend, so set credit limits on the provider side. Real 
 ```
 npm test
 ```
+
+## License
+
+MIT
