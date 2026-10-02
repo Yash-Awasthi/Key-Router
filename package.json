@@ -1,5 +1,5 @@
 {
-  "name": "router",
+  "name": "key-router",
   "private": true,
   "type": "module",
   "scripts": {

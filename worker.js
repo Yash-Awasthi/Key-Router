@@ -30,7 +30,7 @@ async function proxy(req, env, url) {
 
 async function admin(req, env, url) {
   if (!(await authorized(req, env))) {
-    return new Response("login required", { status: 401, headers: { "www-authenticate": 'Basic realm="Router admin"' } });
+    return new Response("login required", { status: 401, headers: { "www-authenticate": 'Basic realm="Key Router admin"' } });
   }
   if (url.pathname === "/admin") return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
 

@@ -1,10 +1,10 @@
-# Router
+# Key Router
 
 A Cloudflare Worker that wraps any OpenAI-compatible provider key (OpenRouter, DeepSeek, Groq, Zhipu, and so on) in a disposable gateway key with an expiry. Clients only ever see the gateway key; the worker swaps in the real key and forwards the request, streaming included.
 
 ## Using it
 
-Open `https://<worker>.workers.dev/admin`, sign in with any username and the admin password, then enter:
+Open `https://<worker>.workers.dev/admin` and sign in with the admin password (the username is ignored). Then enter:
 
 - the provider's base URL exactly as its docs give it (for example `https://openrouter.ai/api/v1`)
 - the real API key
@@ -35,3 +35,7 @@ The admin password can later be changed in the Cloudflare dashboard under the wo
 ```
 npm test
 ```
+
+## Revoking
+
+Use the Revoke button on the admin page, or delete the entry under Storage & Databases > KV > `KEYS` in the Cloudflare dashboard.

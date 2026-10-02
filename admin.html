@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Router</title>
+<title>Key Router</title>
 <style>
   :root { --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; }
   @media (prefers-color-scheme: dark) {
@@ -32,7 +32,7 @@
 </head>
 <body>
 <main>
-  <h1>Router</h1>
+  <h1>Key Router</h1>
   <p class="sub">Wrap a provider key in a disposable key that expires on its own.</p>
 
   <form class="card" id="create">
@@ -107,7 +107,11 @@
     load();
   };
 
-  document.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = () => navigator.clipboard.writeText($(b.dataset.copy).textContent)));
+  document.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
+    await navigator.clipboard.writeText($(b.dataset.copy).textContent);
+    b.textContent = "copied";
+    setTimeout(() => (b.textContent = "copy"), 1200);
+  }));
   load();
 </script>
 </body>
