@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "deploy": "wrangler deploy"
+    "deploy": "npx wrangler deploy",
+    "setup": "npx wrangler deploy && npx wrangler secret put ADMIN_PASSWORD"
   }
 }
