@@ -28,13 +28,23 @@ The page returns the endpoint and gateway key to hand out. Keys expire on their 
 
 OpenAI-compatible clients set their base URL to `https://<worker>.workers.dev/v1` and send the gateway key as `Authorization: Bearer` or `x-api-key`.
 
-Claude Code works when the provider exposes an Anthropic-compatible endpoint (OpenRouter does):
+Claude Code works when the provider exposes an Anthropic-compatible endpoint (OpenRouter does). The admin page prints a ready-to-paste `~/.claude/settings.json` after each key is created:
 
+```json
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "<gateway key>",
+    "ANTHROPIC_BASE_URL": "https://<worker>.workers.dev",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}
 ```
-ANTHROPIC_BASE_URL=https://<worker>.workers.dev
-ANTHROPIC_AUTH_TOKEN=<gateway key>
-ANTHROPIC_API_KEY=
-```
+
+The base URL has no `/v1`; Claude Code appends `/v1/messages` itself.
 
 ## Revoking
 

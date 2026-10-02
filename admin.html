@@ -23,6 +23,7 @@
   .result { display: none; margin-top: 16px; padding: 12px; border-radius: 6px; border: 1px dashed var(--accent); }
   .row { display: flex; align-items: center; gap: 4px; margin: 4px 0; overflow-wrap: anywhere; }
   code { font: 13px ui-monospace, monospace; }
+  pre { margin: 6px 0 0; padding: 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; }
   .err { color: var(--danger); margin-top: 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
@@ -47,6 +48,8 @@
     <div class="result" id="result">
       <div class="row">Endpoint: <code id="outBase"></code><button type="button" class="copy" data-copy="outBase">copy</button></div>
       <div class="row">API key: <code id="outKey"></code><button type="button" class="copy" data-copy="outKey">copy</button></div>
+      <div class="row">Claude Code <code>settings.json</code>:<button type="button" class="copy" data-copy="outSettings">copy</button></div>
+      <pre><code id="outSettings"></code></pre>
     </div>
   </form>
 
@@ -102,6 +105,10 @@
     if (!res.ok) return ($("err").textContent = data.error.message);
     $("outBase").textContent = endpoint;
     $("outKey").textContent = data.id;
+    $("outSettings").textContent = JSON.stringify({
+      env: { ANTHROPIC_API_KEY: data.id, ANTHROPIC_BASE_URL: location.origin, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+      permissions: { allow: [], deny: [] },
+    }, null, 2);
     $("result").style.display = "block";
     $("key").value = "";
     load();
