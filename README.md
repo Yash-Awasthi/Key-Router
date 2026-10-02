@@ -2,17 +2,54 @@
 
 A Cloudflare Worker that wraps any OpenAI-compatible provider key (OpenRouter, DeepSeek, Groq, Zhipu, and so on) in a disposable gateway key with an expiry. Clients only ever see the gateway key; the worker swaps in the real key and forwards the request, streaming included.
 
-## Deploying to any Cloudflare account
+## Deploying to your own Cloudflare account
 
-```
-git clone https://github.com/Yash-Awasthi/Key-Router.git
-cd Key-Router
-npm run setup
-```
+Everything runs on the Cloudflare free plan. No server or credit card is needed, and your computer can be switched off once it is deployed.
 
-Setup logs in to Cloudflare if needed, creates the KV store automatically, deploys, and asks for the admin password. To target a different account, run `npx wrangler logout` first. If the worker name is already taken, deploy with `npx wrangler deploy --name <name>`.
+### What you need
 
-Keys live in each account's own KV store, so keys made on one deployment do not work on another. The admin password can later be changed in the Cloudflare dashboard under the worker's Variables and Secrets.
+- A free Cloudflare account ([sign up](https://dash.cloudflare.com/sign-up))
+- [Node.js](https://nodejs.org) 22 or newer
+- [Git](https://git-scm.com)
+
+### Steps
+
+1. Get the code:
+
+   ```
+   git clone https://github.com/Yash-Awasthi/Key-Router.git
+   cd Key-Router
+   ```
+
+2. Deploy:
+
+   ```
+   npm run setup
+   ```
+
+   This walks through everything:
+
+   - A browser window opens asking you to log in to Cloudflare and allow access. Approve it and return to the terminal.
+   - On a brand-new account, you are asked to pick a `workers.dev` subdomain. It becomes part of your URL.
+   - The KV store that holds keys is created automatically.
+   - The worker is deployed and its URL is printed, for example `https://ai-gateway.<your-subdomain>.workers.dev`.
+   - Finally you are asked for an admin password. Choose a long one; it protects the admin page.
+
+3. Open `https://ai-gateway.<your-subdomain>.workers.dev/admin`, sign in with any username and the password from step 2, and create your first key.
+
+The first request to a fresh deployment can return a Cloudflare error for up to a minute while the URL propagates.
+
+### Changing things later
+
+| Task | How |
+|---|---|
+| Update to the latest version | `git pull` then `npm run deploy` |
+| Change the admin password | `npx wrangler secret put ADMIN_PASSWORD`, or the worker's Variables and Secrets in the dashboard |
+| Use a different worker name | `npx wrangler deploy --name <name>`, then run `npx wrangler secret put ADMIN_PASSWORD --name <name>` |
+| Deploy to another Cloudflare account | `npx wrangler logout`, then `npm run setup` |
+| Remove everything | `npx wrangler delete`, then delete the KV namespace under Storage & Databases > KV in the dashboard |
+
+Keys live in each account's own KV store, so keys made on one deployment do not work on another.
 
 ## Creating keys
 
