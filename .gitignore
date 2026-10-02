@@ -1,0 +1,4 @@
+.dev.vars
+routes.json
+.wrangler/
+node_modules/
