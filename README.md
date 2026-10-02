@@ -1,45 +1,34 @@
 # Router
 
-A Cloudflare Worker that hands out disposable API keys for any OpenAI-compatible provider (OpenRouter, DeepSeek, Groq, Together, and so on). Clients only ever see a gateway key; the worker swaps it for the real provider key and forwards the request, streaming included.
+A Cloudflare Worker that wraps any OpenAI-compatible provider key (OpenRouter, DeepSeek, Groq, Zhipu, and so on) in a disposable gateway key with an expiry. Clients only ever see the gateway key; the worker swaps in the real key and forwards the request, streaming included.
 
-## Setup
+## Using it
+
+Open `https://<worker>.workers.dev/admin`, sign in with any username and the admin password, then enter:
+
+- the provider's base URL exactly as its docs give it (for example `https://openrouter.ai/api/v1`)
+- the real API key
+- an expiry
+
+The page returns the endpoint and gateway key to hand out. Keys expire on their own and can be revoked from the same page; revocation can take up to a minute to reach every edge location.
+
+Clients set their base URL to `https://<worker>.workers.dev/v1` and send the gateway key as `Authorization: Bearer` or `x-api-key`.
+
+## Deploying your own
 
 ```
 npx wrangler login
+npx wrangler kv namespace create KEYS      # put the printed id in wrangler.toml
+npx wrangler secret put ADMIN_PASSWORD
 npx wrangler deploy
 ```
 
-Create the routes, one entry per gateway key. `base` is the provider URL without the trailing `/v1`, and `expires` is required.
-
-```json
-{
-  "<random gateway key>": {
-    "base": "https://openrouter.ai/api",
-    "key": "sk-or-...",
-    "expires": "2026-10-03T12:00:00Z"
-  }
-}
-```
-
-Generate gateway keys with `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"`, then upload the file:
-
-```
-npx wrangler secret put ROUTES < routes.json
-```
-
-Re-uploading replaces every route, which is also how a key is revoked.
-
-## Client configuration
-
-- Base URL: `https://<worker>.workers.dev/v1`
-- API key: the gateway key
-
-Keys are accepted as `Authorization: Bearer` or `x-api-key`. Upstream always receives `Authorization: Bearer <real key>`.
+The admin password can later be changed in the Cloudflare dashboard under the worker's Variables and Secrets.
 
 ## Notes
 
 - The gateway does not cap spend. Set credit limits on the provider side.
-- `routes.json` and `.dev.vars` are git-ignored; never commit real keys.
+- Real keys are stored in Workers KV and are never returned by the admin API.
 
 ## Tests
 

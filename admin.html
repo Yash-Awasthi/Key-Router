@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Router</title>
+<style>
+  :root { --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1f1f1d; --text: #ececE8; --muted: #9a9a93; --line: #33332f; --accent: #7d9bff; --danger: #ff7a68; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  button { margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  button.ghost { background: none; color: var(--danger); margin: 0; padding: 4px 8px; }
+  button.copy { background: none; color: var(--accent); margin: 0 0 0 6px; padding: 0 4px; }
+  .result { display: none; margin-top: 16px; padding: 12px; border-radius: 6px; border: 1px dashed var(--accent); }
+  .row { display: flex; align-items: center; gap: 4px; margin: 4px 0; overflow-wrap: anywhere; }
+  code { font: 13px ui-monospace, monospace; }
+  .err { color: var(--danger); margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th { color: var(--muted); font-weight: 500; }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Router</h1>
+  <p class="sub">Wrap a provider key in a disposable key that expires on its own.</p>
+
+  <form class="card" id="create">
+    <label for="base">Real endpoint (provider base URL)</label>
+    <input id="base" placeholder="https://openrouter.ai/api/v1" required>
+    <label for="key">Real API key</label>
+    <input id="key" type="password" autocomplete="off" required>
+    <label for="expires">Expires</label>
+    <input id="expires" type="datetime-local" required>
+    <button>Create key</button>
+    <div class="err" id="err"></div>
+    <div class="result" id="result">
+      <div class="row">Endpoint: <code id="outBase"></code><button type="button" class="copy" data-copy="outBase">copy</button></div>
+      <div class="row">API key: <code id="outKey"></code><button type="button" class="copy" data-copy="outKey">copy</button></div>
+    </div>
+  </form>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th></th></tr></thead>
+      <tbody id="list"></tbody>
+    </table>
+  </div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const endpoint = location.origin + "/v1";
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  $("expires").value = local(new Date(Date.now() + 864e5));
+
+  async function load() {
+    const keys = await (await fetch("/admin/keys")).json();
+    $("list").innerHTML = "";
+    if (!keys.length) $("list").innerHTML = '<tr><td colspan="4" class="empty">No active keys</td></tr>';
+    for (const k of keys) {
+      const tr = document.createElement("tr");
+      for (const text of [k.id, k.base, new Date(k.expires).toLocaleString()]) {
+        const td = document.createElement("td");
+        td.textContent = text;
+        tr.append(td);
+      }
+      const td = document.createElement("td");
+      const del = document.createElement("button");
+      del.className = "ghost";
+      del.textContent = "Revoke";
+      del.onclick = async () => {
+        if (!confirm("Revoke " + k.id + "?")) return;
+        await fetch("/admin/keys/" + k.id, { method: "DELETE" });
+        load();
+      };
+      td.append(del);
+      tr.append(td);
+      $("list").append(tr);
+    }
+  }
+
+  $("create").onsubmit = async (e) => {
+    e.preventDefault();
+    $("err").textContent = "";
+    const res = await fetch("/admin/keys", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ base: $("base").value.trim(), key: $("key").value.trim(), expires: new Date($("expires").value).toISOString() }),
+    });
+    const data = await res.json();
+    if (!res.ok) return ($("err").textContent = data.error.message);
+    $("outBase").textContent = endpoint;
+    $("outKey").textContent = data.id;
+    $("result").style.display = "block";
+    $("key").value = "";
+    load();
+  };
+
+  document.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = () => navigator.clipboard.writeText($(b.dataset.copy).textContent)));
+  load();
+</script>
+</body>
+</html>
