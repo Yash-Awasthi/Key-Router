@@ -55,7 +55,7 @@
 
   <div class="card">
     <table>
-      <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th></th></tr></thead>
+      <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th>Usage</th><th></th></tr></thead>
       <tbody id="list"></tbody>
     </table>
   </div>
@@ -70,7 +70,7 @@
   async function load() {
     const keys = await (await fetch("/admin/keys")).json();
     $("list").innerHTML = "";
-    if (!keys.length) $("list").innerHTML = '<tr><td colspan="4" class="empty">No active keys</td></tr>';
+    if (!keys.length) $("list").innerHTML = '<tr><td colspan="5" class="empty">No active keys</td></tr>';
     for (const k of keys) {
       const tr = document.createElement("tr");
       for (const text of [k.id, k.base, new Date(k.expires).toLocaleString()]) {
@@ -78,6 +78,15 @@
         td.textContent = text;
         tr.append(td);
       }
+      const use = document.createElement("td");
+      use.style.whiteSpace = "pre-line";
+      const models = Object.entries(k.usage);
+      const total = models.reduce((sum, [, u]) => sum + u.cost, 0);
+      use.textContent = models.length
+        ? `Total $${total.toFixed(4)}\n` + models.map(([m, u]) =>
+            `${m}: ${u.priced ? "$" + u.cost.toFixed(4) : "unpriced"} (${u.requests} req, ${u.input} in / ${u.output} out)`).join("\n")
+        : "none";
+      tr.append(use);
       const td = document.createElement("td");
       const del = document.createElement("button");
       del.className = "ghost";

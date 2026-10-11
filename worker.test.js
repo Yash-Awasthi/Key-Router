@@ -14,11 +14,24 @@ registerHooks({
     return next(url, context);
   },
 });
-const { default: worker } = await import("./worker.js");
+const { default: worker, Meter } = await import("./worker.js");
 
 const store = new Map();
+const meters = new Map();
 const env = {
   ADMIN_PASSWORD: "pw",
+  METER: {
+    idFromName: (name) => name,
+    get(name) {
+      if (!meters.has(name)) {
+        const data = new Map();
+        const storage = { get: async (k) => data.get(k), put: async (k, v) => void data.set(k, v), deleteAll: async () => data.clear() };
+        const meter = new Meter({ storage });
+        meters.set(name, { fetch: (url, init) => meter.fetch(new Request(url, init)) });
+      }
+      return meters.get(name);
+    },
+  },
   KEYS: {
     async get(k) { return store.has(k) ? JSON.parse(store.get(k).value) : null; },
     async put(k, value, opts) { store.set(k, { value, ...opts }); },
@@ -32,7 +45,9 @@ globalThis.fetch = async (url, init) => {
   sent = { url, headers: init.headers };
   return new Response("ok");
 };
-const req = (path, init = {}) => worker.fetch(new Request("https://gw.example" + path, init), env);
+const pending = [];
+const ctx = { waitUntil: (p) => pending.push(p) };
+const req = (path, init = {}) => worker.fetch(new Request("https://gw.example" + path, init), env, ctx);
 const adminAuth = { authorization: "Basic " + btoa("admin:pw") };
 const create = (body) => req("/admin/keys", { method: "POST", headers: { ...adminAuth, "content-type": "application/json" }, body: JSON.stringify(body) });
 const inAnHour = new Date(Date.now() + 3600e3).toISOString();
@@ -80,4 +95,36 @@ test("upstream failure becomes 502", async () => {
   globalThis.fetch = async () => { throw new Error("boom"); };
   assert.equal((await req("/v1/models", { headers: { authorization: `Bearer ${id}` } })).status, 502);
   globalThis.fetch = real;
+});
+
+test("cost follows Anthropic list prices", async () => {
+  const { cost } = await import("./worker.js");
+  const M = 1e6;
+  assert.equal(cost("claude-opus-5-5", { input_tokens: M, output_tokens: M }), 24);
+  assert.equal(cost("claude-sonnet-5-5", { input_tokens: M, output_tokens: M }), 12);
+  assert.equal(cost("anthropic/claude-haiku-5.5", { input_tokens: M, output_tokens: M }), 3);
+  assert.equal(cost("claude-opus-5-5", { cache_read_input_tokens: M, cache_creation_input_tokens: M }), 5.2);
+  assert.equal(cost("claude-opus-5-5", { cache_creation_input_tokens: M, cache_creation: { ephemeral_1h_input_tokens: M } }), 8);
+  assert.equal(cost("claude-opus-4-8", { input_tokens: 5 }), null);
+});
+
+test("messages calls are metered, streaming and not", async () => {
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour })).json();
+  const real = globalThis.fetch;
+  const call = async (body, type) => {
+    globalThis.fetch = async () => new Response(body, { headers: { "content-type": type } });
+    const res = await req("/v1/messages", { method: "POST", headers: { "x-api-key": id }, body: "{}" });
+    assert.equal(await res.text(), body, "client gets the untouched body");
+    await Promise.all(pending.splice(0));
+  };
+  await call(JSON.stringify({ model: "claude-opus-5-5", usage: { input_tokens: 1000, output_tokens: 500 } }), "application/json");
+  await call([
+    'event: message_start\ndata: {"type":"message_start","message":{"model":"claude-sonnet-5-5","usage":{"input_tokens":2000,"output_tokens":1}}}',
+    'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":300}}',
+  ].join("\n\n"), "text/event-stream");
+  globalThis.fetch = real;
+  const u = (await (await req("/admin/keys", { headers: adminAuth })).json()).find((k) => k.id === id).usage;
+  assert.ok(Math.abs(u["claude-opus-5-5"].cost - 0.014) < 1e-9);
+  assert.ok(Math.abs(u["claude-sonnet-5-5"].cost - 0.007) < 1e-9);
+  assert.equal(u["claude-sonnet-5-5"].output, 300);
 });

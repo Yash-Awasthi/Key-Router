@@ -4,3 +4,11 @@ compatibility_date = "2026-10-01"
 
 [[kv_namespaces]]
 binding = "KEYS"
+
+[[durable_objects.bindings]]
+name = "METER"
+class_name = "Meter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Meter"]

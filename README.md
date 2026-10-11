@@ -83,13 +83,21 @@ Claude Code works when the provider exposes an Anthropic-compatible endpoint (Op
 
 The base URL has no `/v1`; Claude Code appends `/v1/messages` itself.
 
+## Cost tracking
+
+Every successful `POST /v1/messages` response is metered. The worker reads the model and token counts from the response (streamed or not), prices them at Anthropic's list rates for Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 (including cache reads and 5-minute and 1-hour cache writes), and adds them to a per-key total. The admin page shows each key's spend per model.
+
+- Totals are kept in a Durable Object per key, so concurrent requests never lose updates. Revoking a key deletes its totals.
+- Prices live in `PRICES` in `worker.js`. Other models are counted by tokens and shown as unpriced.
+- Figures are list-price estimates. Discounts, batch pricing and fast mode are not modelled, so treat them as a monitor, not an invoice.
+
 ## Revoking
 
 Use the Revoke button on the admin page, or delete the entry under Storage & Databases > KV in the Cloudflare dashboard. Revocation can take up to a minute to reach every edge location.
 
 ## Limits
 
-The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read. Workers Paid raises this to 10 million per month.
+The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request. Workers Paid raises this to 10 million per month.
 
 The gateway does not cap spend, so set credit limits on the provider side. Real keys are stored in Workers KV and are never returned by the admin API.
 
