@@ -82,6 +82,13 @@ test("created key proxies to the provider base with the real key", async () => {
   assert.equal((await req("/v1/models", { headers: { authorization: `Bearer ${id}` } })).status, 401);
 });
 
+test("api.anthropic.com gets x-api-key and a /v1 prefix", async () => {
+  const { id } = await (await create({ base: "https://api.anthropic.com", key: "sk-ant-real", expires: inAnHour })).json();
+  await req("/v1/messages?beta=true", { method: "POST", headers: { "x-api-key": id }, body: "{}" });
+  assert.equal(sent.url, "https://api.anthropic.com/v1/messages?beta=true");
+  assert.equal(sent.headers.get("x-api-key"), "sk-ant-real");
+});
+
 test("rejects unknown, oversized and expired keys", async () => {
   store.set("old", { value: JSON.stringify({ base: "https://x.example", key: "k", expires: "2020-01-01T00:00:00Z" }) });
   for (const k of ["nope", "x".repeat(600), "old"]) {

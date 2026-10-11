@@ -38,7 +38,8 @@ function extract(text, type) {
   let model;
   const usage = {};
   for (const line of text.split("\n")) {
-    if (!line.startsWith("data:")) continue;
+    // Free plan allows 10ms CPU: skip the many content_block_delta lines without parsing them.
+    if (!line.startsWith("data:") || !/"message_(start|delta)"/.test(line)) continue;
     let ev;
     try { ev = JSON.parse(line.slice(5)); } catch { continue; }
     if (ev.type === "message_start") model = ev.message.model;
@@ -104,12 +105,16 @@ async function proxy(req, env, url, ctx) {
   const headers = new Headers(req.headers);
   headers.delete("x-api-key");
   headers.set("authorization", `Bearer ${route.key}`);
+  // api.anthropic.com authenticates API keys with x-api-key, not Bearer.
+  if (route.base.includes("api.anthropic.com")) headers.set("x-api-key", route.key);
   for (const h of ["cf-connecting-ip", "x-forwarded-for", "x-real-ip"]) headers.delete(h);
 
   // Clients use <gateway>/v1; the stored base is the provider's own base URL, which may end in /v1, /v4 or nothing.
   const path = url.pathname.replace(/^\/v1(?=\/|$)/, "");
   try {
-    const res = await fetch(route.base + path + url.search, { method: req.method, headers, body: req.body });
+    // Anthropic's base has no /v1 prefix of its own, so a bare host would 404.
+    const base = route.base === "https://api.anthropic.com" ? route.base + "/v1" : route.base;
+    const res = await fetch(base + path + url.search, { method: req.method, headers, body: req.body });
     if (ctx && req.method === "POST" && path === "/messages" && res.ok) ctx.waitUntil(record(env, presented, res.clone()));
     return res;
   } catch (err) {
