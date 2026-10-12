@@ -89,7 +89,7 @@ export class Meter {
       if (rpm) {
         const now = Date.now();
         const hits = ((await this.storage.get("hits")) || []).filter((t) => t > now - 60e3);
-        if (hits.length >= rpm) return json(429, `rate limit of ${rpm} requests per minute reached`);
+        if (hits.length >= rpm) return json(429, `rate limit reached (${rpm} per minute)`);
         hits.push(now);
         await this.storage.put("hits", hits);
       }

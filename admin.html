@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Key Router</title>
 <style>
-  :root { --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; }
+  :root { color-scheme: light dark; --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #151514; --card: #1f1f1d; --text: #ececE8; --muted: #9a9a93; --line: #33332f; --accent: #7d9bff; --danger: #ff7a68; }
+    :root { color-scheme: light dark; --bg: #151514; --card: #1f1f1d; --text: #ececE8; --muted: #9a9a93; --line: #33332f; --accent: #7d9bff; --danger: #ff7a68; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
@@ -20,16 +20,23 @@
   button { margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   button.ghost { background: none; color: var(--danger); margin: 0; padding: 4px 8px; }
   button.ghost.plain { color: var(--accent); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); column-gap: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); column-gap: 12px; }
+  .scroll { overflow-x: auto; }
+  table { min-width: 640px; }
+  th, button { white-space: nowrap; }
+  td.id { font: 12px ui-monospace, monospace; word-break: break-all; min-width: 150px; }
   .tag { color: var(--danger); font-size: 12px; }
   button.copy { background: none; color: var(--accent); margin: 0 0 0 6px; padding: 0 4px; }
   .result { display: none; margin-top: 16px; padding: 12px; border-radius: 6px; border: 1px dashed var(--accent); }
-  .row { display: flex; align-items: center; gap: 4px; margin: 4px 0; overflow-wrap: anywhere; }
+  .row { display: flex; align-items: baseline; gap: 4px; margin: 4px 0; }
+  .row > span { white-space: nowrap; }
+  .row code { overflow-wrap: anywhere; }
+  .row button { flex: none; }
   code { font: 13px ui-monospace, monospace; }
   pre { margin: 6px 0 0; padding: 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; }
   .err { color: var(--danger); margin-top: 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 500; }
   .empty { color: var(--muted); }
 </style>
@@ -59,31 +66,31 @@
         <input id="expires" type="datetime-local" required>
       </div>
       <div>
-        <label for="label">Label (optional)</label>
-        <input id="label" maxlength="100">
+        <label for="label">Label</label>
+        <input id="label" maxlength="100" placeholder="optional">
       </div>
       <div>
-        <label for="cap">Spend cap, USD (optional)</label>
-        <input id="cap" type="number" min="0" step="any">
+        <label for="cap">Spend cap (USD)</label>
+        <input id="cap" type="number" min="0" step="any" placeholder="no cap">
       </div>
       <div>
-        <label for="rpm">Requests per minute (optional)</label>
-        <input id="rpm" type="number" min="1" step="1">
+        <label for="rpm">Requests per minute</label>
+        <input id="rpm" type="number" min="1" step="1" placeholder="no limit">
       </div>
     </div>
-    <label for="models">Allowed models, comma separated, * at the end matches a prefix (optional)</label>
-    <input id="models" placeholder="claude-sonnet-*, claude-haiku-*">
+    <label for="models">Allowed models (comma separated; a trailing * matches a prefix)</label>
+    <input id="models" placeholder="all models, or e.g. claude-sonnet-*, claude-haiku-*">
     <button>Create key</button>
     <div class="err" id="err"></div>
     <div class="result" id="result">
-      <div class="row">Endpoint: <code id="outBase"></code><button type="button" class="copy" data-copy="outBase">copy</button></div>
-      <div class="row">API key: <code id="outKey"></code><button type="button" class="copy" data-copy="outKey">copy</button></div>
-      <div class="row">Claude Code <code>settings.json</code>:<button type="button" class="copy" data-copy="outSettings">copy</button></div>
+      <div class="row"><span>Endpoint:</span> <code id="outBase"></code><button type="button" class="copy" data-copy="outBase">copy</button></div>
+      <div class="row"><span>API key:</span> <code id="outKey"></code><button type="button" class="copy" data-copy="outKey">copy</button></div>
+      <div class="row"><span>Claude Code <code>settings.json</code>:</span><button type="button" class="copy" data-copy="outSettings">copy</button></div>
       <pre><code id="outSettings"></code></pre>
     </div>
   </form>
 
-  <div class="card">
+  <div class="card scroll">
     <table>
       <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th>Limits</th><th>Usage</th><th></th></tr></thead>
       <tbody id="list"></tbody>
@@ -131,7 +138,10 @@
     for (const k of keys) {
       const tr = document.createElement("tr");
       const active = Date.parse(k.expires) > Date.now();
-      tr.append(cell((k.label ? k.label + "\n" : "") + k.id), cell(k.base));
+      const id = cell(k.id);
+      id.className = "id";
+      if (k.label) id.prepend(Object.assign(document.createElement("strong"), { textContent: k.label + "\n", style: "font-family: system-ui, sans-serif" }));
+      tr.append(id, cell(k.base));
       const exp = cell(new Date(k.expires).toLocaleString());
       if (!active) exp.append(Object.assign(document.createElement("div"), { className: "tag", textContent: "expired" }));
       tr.append(exp);
