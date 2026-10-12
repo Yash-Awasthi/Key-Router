@@ -2,6 +2,8 @@
 
 A Cloudflare Worker that wraps a provider key (OpenAI-compatible ones such as OpenRouter, DeepSeek, Groq and Zhipu, plus Anthropic, Azure OpenAI and Gemini) in a disposable gateway key with an expiry. Clients only ever see the gateway key; the worker swaps in the real key and forwards the request, streaming included.
 
+Each gateway key can also carry its own model allowlist, spend and token caps, rate limit, output-token limit, IP allowlist, time window and automatic downgrade to cheaper models. Usage and cost are tracked per key and per month. Keys can be handed out through one-time links, and holders can check their own remaining budget. The admin page signs in with a passkey, and real keys are encrypted at rest.
+
 ## Deploying to your own Cloudflare account
 
 Everything runs on the Cloudflare free plan. No server or credit card is needed, and your computer can be switched off once it is deployed.
@@ -90,7 +92,7 @@ Passkeys belong to the address you register them on, so a passkey made on `ai-ga
 
 OpenAI-compatible clients set their base URL to `https://<worker>.workers.dev/v1` and send the gateway key as `Authorization: Bearer`, `x-api-key`, `api-key`, `x-goog-api-key` or a `?key=` query parameter. The query parameter is removed before the request is forwarded. The gateway answers CORS preflight requests, so browser apps can call it directly.
 
-Claude Code works when the provider exposes an Anthropic-compatible endpoint (OpenRouter does). The admin page prints a ready-to-paste `~/.claude/settings.json` after each key is created:
+Claude Code works when the provider exposes an Anthropic-compatible endpoint, such as Anthropic itself or OpenRouter. The admin page prints a ready-to-paste `~/.claude/settings.json` after each key is created:
 
 ```json
 {
@@ -121,17 +123,24 @@ Prices are edited in the Prices section of the admin page. A row prices every mo
 - Figures are list-price estimates. Discounts and batch pricing are not modelled, so treat them as a monitor, not an invoice.
 - For keys pointing at OpenRouter, the cost OpenRouter reports in its response is used instead of the price table. Import OpenRouter prices fills the table with every OpenRouter model's list price, to review and save.
 
-## Revoking
+## Revoking and expiry
 
 Use the Revoke button on the admin page, or delete the entry under Storage & Databases > KV in the Cloudflare dashboard. Revocation can take up to a minute to reach every edge location.
 
-Real provider keys are encrypted with AES-GCM under the `ENCRYPTION_KEY` secret, bound to their gateway key, so a copy of the KV store is useless without the secret. The admin page warns when the secret is missing; keys are then stored as plain text. When a key expires, the real provider key is erased from storage. The gateway key stays listed as expired for 30 days so its spend can still be read, then it is removed along with its totals.
+When a key expires, the real provider key is erased from storage. The gateway key stays listed as expired for 30 days so its spend can still be read, then it is removed along with its totals.
+
+## Security
+
+- Real provider keys are encrypted with AES-GCM under the `ENCRYPTION_KEY` secret and bound to their gateway key, so a copy of the KV store is useless without the secret. Without the secret they are stored as plain text, and the admin page shows a warning.
+- Real keys are never returned by the admin API or shown in the browser; listing models and duplicating keys use the stored key on the server.
+- The client's IP headers, cookies, origin and referer, and the gateway key itself, are removed before a request is forwarded, and upstream redirects are passed back instead of followed, so the real key never reaches another host.
+- Admin changes require a JSON content type, which browsers only send cross-site after a CORS preflight the admin API never grants, and the admin page cannot be framed.
 
 ## Limits
 
-The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request, and keys with a cap or rate limit make one more. The admin page lists keys 20 at a time and creates at most 20 at once, because the free plan allows 50 subrequests per request. Malformed keys are rejected before any KV read. Workers Paid raises this to 10 million per month.
+The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Workers Paid raises this to 10 million per month. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request, and keys with a cap or rate limit make one more. Malformed keys are rejected before any KV read. The admin page lists keys 20 at a time and creates at most 20 at once, because the free plan allows 50 subrequests per request.
 
-Spend caps are estimates that can be overshot by requests in flight, so also set credit limits on the provider side. Real keys are stored in Workers KV and are never returned by the admin API or shown in the browser.
+Spend caps are estimates that can be overshot by requests in flight, so also set credit limits on the provider side.
 
 ## Tests
 
