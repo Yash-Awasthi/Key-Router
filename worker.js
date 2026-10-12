@@ -91,8 +91,9 @@ function normalize(u) {
 
 // Handles Anthropic Messages, OpenAI Chat Completions and OpenAI Responses bodies, streamed or not.
 function extract(text, type) {
+  // Only events carrying a usage object are parsed: a long stream parsed in full would exceed the free plan's 10 ms of CPU.
   const chunks = type?.includes("event-stream")
-    ? text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5))
+    ? text.split("\n").filter((l) => l.startsWith("data:") && /"usage"\s*:\s*\{/.test(l)).map((l) => l.slice(5))
     : [text];
   let model;
   const usage = {};
