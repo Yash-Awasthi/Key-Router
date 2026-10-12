@@ -5,39 +5,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Key Router</title>
 <style>
-  :root { color-scheme: light dark; --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; }
+  :root { color-scheme: light dark; --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; --ok: #2b7a3d; }
   @media (prefers-color-scheme: dark) {
-    :root { color-scheme: light dark; --bg: #151514; --card: #1f1f1d; --text: #ececE8; --muted: #9a9a93; --line: #33332f; --accent: #7d9bff; --danger: #ff7a68; }
+    :root { --bg: #151514; --card: #1f1f1d; --text: #ececE8; --muted: #9a9a93; --line: #33332f; --accent: #7d9bff; --danger: #ff7a68; --ok: #6fcf86; }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0; }
   p.sub { color: var(--muted); margin: 0 0 24px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
   input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
-  button { margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  input[type=checkbox] { width: auto; margin: 0 6px 0 0; }
+  button { margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; white-space: nowrap; }
+  button.secondary { background: none; color: var(--accent); border: 1px solid var(--line); }
   button.ghost { background: none; color: var(--danger); margin: 0; padding: 4px 8px; }
   button.ghost.plain { color: var(--accent); }
+  button.small { margin: 0; padding: 5px 10px; font-size: 13px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); column-gap: 12px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 16px 0 0; padding: 4px 14px 14px; }
+  legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+  .models { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .models label { display: flex; align-items: center; margin: 3px 0; color: var(--text); font: 13px ui-monospace, monospace; overflow-wrap: anywhere; }
   .scroll { overflow-x: auto; }
-  table { min-width: 640px; }
-  th, button { white-space: nowrap; }
+  table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; white-space: nowrap; }
   td.id { font: 12px ui-monospace, monospace; word-break: break-all; min-width: 150px; }
+  td.multi { white-space: pre-line; }
+  #prices td { padding: 4px; }
+  #prices input { padding: 6px; min-width: 56px; }
+  #prices td:first-child input { min-width: 150px; }
+  #prices td:nth-child(7) input { min-width: 80px; }
   .tag { color: var(--danger); font-size: 12px; }
-  button.copy { background: none; color: var(--accent); margin: 0 0 0 6px; padding: 0 4px; }
   .result { display: none; margin-top: 16px; padding: 12px; border-radius: 6px; border: 1px dashed var(--accent); }
   .row { display: flex; align-items: baseline; gap: 4px; margin: 4px 0; }
   .row > span { white-space: nowrap; }
   .row code { overflow-wrap: anywhere; }
   .row button { flex: none; }
+  button.copy { background: none; color: var(--accent); margin: 0 0 0 6px; padding: 0 4px; }
   code { font: 13px ui-monospace, monospace; }
   pre { margin: 6px 0 0; padding: 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; }
   .err { color: var(--danger); margin-top: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; }
+  .msg { color: var(--ok); margin-top: 10px; }
   .empty { color: var(--muted); }
 </style>
 </head>
@@ -46,12 +62,16 @@
   <h1>Key Router</h1>
   <p class="sub">Wrap a provider key in a disposable key that expires on its own.</p>
 
-  <form class="card" id="create">
-    <label for="base">Real endpoint (provider base URL)</label>
-    <input id="base" placeholder="https://openrouter.ai/api/v1" required>
-    <label for="key">Real API key</label>
-    <input id="key" type="password" autocomplete="off" required>
+  <form class="card" id="form">
+    <div class="head">
+      <h2 id="formTitle">New key</h2>
+      <button type="button" class="secondary small" id="cancel" hidden>Cancel editing</button>
+    </div>
     <div class="grid">
+      <div>
+        <label for="provider">Provider</label>
+        <select id="provider"></select>
+      </div>
       <div>
         <label for="auth">Send real key as</label>
         <select id="auth">
@@ -61,6 +81,12 @@
           <option value="x-goog-api-key">x-goog-api-key (Gemini)</option>
         </select>
       </div>
+    </div>
+    <label for="base">Endpoint (provider base URL)</label>
+    <input id="base" placeholder="https://api.example.com/v1" required>
+    <label for="key">Real API key</label>
+    <input id="key" type="password" autocomplete="off" required>
+    <div class="grid">
       <div>
         <label for="expires">Expires</label>
         <input id="expires" type="datetime-local" required>
@@ -69,32 +95,97 @@
         <label for="label">Label</label>
         <input id="label" maxlength="100" placeholder="optional">
       </div>
-      <div>
-        <label for="cap">Spend cap (USD)</label>
-        <input id="cap" type="number" min="0" step="any" placeholder="no cap">
-      </div>
-      <div>
-        <label for="rpm">Requests per minute</label>
-        <input id="rpm" type="number" min="1" step="1" placeholder="no limit">
-      </div>
     </div>
-    <label for="models">Allowed models (comma separated; a trailing * matches a prefix)</label>
-    <input id="models" placeholder="all models, or e.g. claude-sonnet-*, claude-haiku-*">
-    <button>Create key</button>
+
+    <fieldset>
+      <legend>Models</legend>
+      <div class="bar" style="margin-top: 8px">
+        <button type="button" class="secondary small" id="loadModels">Load models from provider</button>
+        <input id="modelFilter" placeholder="Filter" style="flex: 1; min-width: 140px; padding: 6px 10px" aria-label="Filter models">
+        <button type="button" class="secondary small" id="selectShown">Select shown</button>
+        <button type="button" class="secondary small" id="clearModels">Clear</button>
+      </div>
+      <div class="err" id="modelErr"></div>
+      <div class="models" id="modelList" hidden></div>
+      <p class="hint" id="modelCount"></p>
+      <label for="patterns">Extra patterns (comma separated; a trailing * matches a prefix)</label>
+      <input id="patterns" placeholder="e.g. claude-haiku-*">
+    </fieldset>
+
+    <fieldset>
+      <legend>Limits (leave empty for none)</legend>
+      <div class="grid">
+        <div>
+          <label for="capUsd">Spend cap (USD)</label>
+          <input id="capUsd" type="number" min="0" step="any" placeholder="no cap">
+        </div>
+        <div>
+          <label for="capTokens">Token cap (input + output)</label>
+          <input id="capTokens" type="number" min="1" step="1" placeholder="no cap">
+        </div>
+        <div>
+          <label for="period">Caps apply</label>
+          <select id="period">
+            <option value="total">Lifetime</option>
+            <option value="month">Each month (UTC)</option>
+          </select>
+        </div>
+        <div>
+          <label for="rpm">Requests per minute</label>
+          <input id="rpm" type="number" min="1" step="1" placeholder="no limit">
+        </div>
+        <div>
+          <label for="maxOutput">Max output tokens per request</label>
+          <input id="maxOutput" type="number" min="1" step="1" placeholder="no limit">
+        </div>
+      </div>
+      <label for="ips">Allowed client IPs or CIDR ranges (comma separated)</label>
+      <input id="ips" placeholder="any address, or e.g. 203.0.113.0/24, 2001:db8::/32">
+    </fieldset>
+
+    <button id="submit">Create key</button>
     <div class="err" id="err"></div>
+    <div class="msg" id="msg"></div>
     <div class="result" id="result">
       <div class="row"><span>Endpoint:</span> <code id="outBase"></code><button type="button" class="copy" data-copy="outBase">copy</button></div>
       <div class="row"><span>API key:</span> <code id="outKey"></code><button type="button" class="copy" data-copy="outKey">copy</button></div>
-      <div class="row"><span>Claude Code <code>settings.json</code>:</span><button type="button" class="copy" data-copy="outSettings">copy</button></div>
+      <div class="row"><span>Claude Code <code>settings.json</code> (Anthropic-compatible providers):</span><button type="button" class="copy" data-copy="outSettings">copy</button></div>
       <pre><code id="outSettings"></code></pre>
     </div>
   </form>
 
-  <div class="card scroll">
-    <table>
-      <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th>Limits</th><th>Usage</th><th></th></tr></thead>
-      <tbody id="list"></tbody>
-    </table>
+  <div class="card">
+    <div class="head">
+      <h2>Keys</h2>
+      <button type="button" class="secondary small" id="export">Export usage CSV</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th>Limits</th><th>Usage</th><th></th></tr></thead>
+        <tbody id="list"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head">
+      <h2>Prices (USD per million tokens)</h2>
+      <a class="hint" href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">Anthropic pricing page</a>
+    </div>
+    <p class="hint">A row prices every model whose name contains its text (dots count as dashes); the longest match wins. "Long above" is a prompt size in tokens past which every rate is multiplied by "Long ×"; "Fast ×" applies to fast-mode requests. Both are optional. Changes apply to new requests within a minute.</p>
+    <div class="scroll">
+      <table id="prices">
+        <thead><tr><th>Model name contains</th><th>Input</th><th>Output</th><th>Cache read</th><th>5m write</th><th>1h write</th><th>Long above</th><th>Long ×</th><th>Fast ×</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="bar">
+      <button type="button" class="secondary" id="addPrice">Add row</button>
+      <button type="button" class="secondary" id="resetPrices">Restore defaults</button>
+      <button type="button" id="savePrices">Save prices</button>
+    </div>
+    <div class="err" id="priceErr"></div>
+    <div class="msg" id="priceMsg"></div>
   </div>
 </main>
 <script>
@@ -102,113 +193,282 @@
   const endpoint = location.origin + "/v1";
   const pad = (n) => String(n).padStart(2, "0");
   const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  $("expires").value = local(new Date(Date.now() + 864e5));
-  const hostAuth = { "api.anthropic.com": "x-api-key", "generativelanguage.googleapis.com": "x-goog-api-key" };
+  const thisMonth = () => new Date().toISOString().slice(0, 7);
+  const usd = (n) => "$" + n.toFixed(n && n < 0.01 ? 6 : 4);
+  const el = (tag, props = {}, ...kids) => {
+    const node = Object.assign(document.createElement(tag), props);
+    node.append(...kids);
+    return node;
+  };
+
+  const PRESETS = [
+    ["Anthropic", "https://api.anthropic.com/v1", "x-api-key"],
+    ["OpenAI", "https://api.openai.com/v1", "bearer"],
+    ["Google Gemini (OpenAI-compatible)", "https://generativelanguage.googleapis.com/v1beta/openai", "bearer"],
+    ["DeepSeek", "https://api.deepseek.com", "bearer"],
+    ["xAI", "https://api.x.ai/v1", "bearer"],
+    ["Mistral", "https://api.mistral.ai/v1", "bearer"],
+    ["Groq", "https://api.groq.com/openai/v1", "bearer"],
+    ["Cerebras", "https://api.cerebras.ai/v1", "bearer"],
+    ["Together AI", "https://api.together.xyz/v1", "bearer"],
+    ["Fireworks AI", "https://api.fireworks.ai/inference/v1", "bearer"],
+    ["Moonshot (Kimi)", "https://api.moonshot.ai/v1", "bearer"],
+    ["Zhipu (GLM)", "https://open.bigmodel.cn/api/paas/v4", "bearer"],
+    ["Alibaba Qwen (DashScope international)", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "bearer"],
+    ["Cohere (OpenAI-compatible)", "https://api.cohere.ai/compatibility/v1", "bearer"],
+    ["OpenRouter", "https://openrouter.ai/api/v1", "bearer"],
+  ];
+  $("provider").append(el("option", { value: "", textContent: "Custom endpoint" }), ...PRESETS.map(([name], i) => el("option", { value: i, textContent: name })));
+  $("provider").onchange = () => {
+    const p = PRESETS[$("provider").value];
+    if (p) [$("base").value, $("auth").value] = [p[1], p[2]];
+  };
+  const hostAuth = { "api.anthropic.com": "x-api-key", "generativelanguage.googleapis.com": "bearer" };
   $("base").oninput = () => {
+    const base = $("base").value.trim().replace(/\/+$/, "");
+    const i = PRESETS.findIndex((p) => p[1] === base);
+    $("provider").value = i < 0 ? "" : i;
     let host = "";
-    try { host = new URL($("base").value.trim()).hostname; } catch {}
+    try { host = new URL(base).hostname; } catch {}
     const style = hostAuth[host] || (host.endsWith(".openai.azure.com") ? "api-key" : null);
     if (style) $("auth").value = style;
   };
-  const cell = (text) => {
-    const td = document.createElement("td");
-    td.style.whiteSpace = "pre-line";
-    td.textContent = text;
-    return td;
-  };
-  const action = (text, cls, fn) => {
-    const b = document.createElement("button");
-    b.className = cls;
-    b.textContent = text;
-    b.onclick = fn;
-    return b;
-  };
+
   async function send(path, method, body) {
     const res = await fetch(path, { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error.message);
+    const data = await res.json().catch(() => ({ error: { message: `request failed (${res.status})` } }));
+    if (!res.ok) throw new Error(data.error?.message || `request failed (${res.status})`);
     return data;
   }
 
+  // Model picker: checked names are allowed exactly; an empty selection with no patterns allows every model.
+  const selected = new Set();
+  let available = [];
+  function renderModels() {
+    const q = $("modelFilter").value.trim().toLowerCase();
+    const names = [...new Set([...available, ...selected])].sort();
+    $("modelList").hidden = !names.length;
+    $("modelList").replaceChildren(...names.filter((n) => n.toLowerCase().includes(q)).map((n) => {
+      const box = el("input", { type: "checkbox", checked: selected.has(n) });
+      box.onchange = () => { box.checked ? selected.add(n) : selected.delete(n); renderModels(); };
+      return el("label", {}, box, n);
+    }));
+    $("modelCount").textContent = selected.size
+      ? `${selected.size} model${selected.size > 1 ? "s" : ""} selected; requests for other models are refused.`
+      : "No models selected: every model is allowed unless a pattern is set.";
+  }
+  const shownModels = () => [...$("modelList").querySelectorAll("label")].map((l) => l.textContent);
+  $("modelFilter").oninput = renderModels;
+  $("selectShown").onclick = () => { shownModels().forEach((n) => selected.add(n)); renderModels(); };
+  $("clearModels").onclick = () => { selected.clear(); renderModels(); };
+  $("loadModels").onclick = async () => {
+    $("modelErr").textContent = "";
+    const key = $("key").value.trim();
+    const body = { base: $("base").value.trim(), auth: $("auth").value };
+    if (key) body.key = key;
+    else if (editing) body.id = editing.id;
+    $("loadModels").disabled = true;
+    try {
+      available = (await send("/admin/models", "POST", body)).models;
+      if (!available.length) $("modelErr").textContent = "The provider returned no models; add names under Extra patterns.";
+    } catch (e) {
+      $("modelErr").textContent = e.message + ". You can still type model names under Extra patterns.";
+    }
+    $("loadModels").disabled = false;
+    renderModels();
+  };
+
+  let editing = null;
+  let keys = [];
+  const NUMBERS = ["capUsd", "capTokens", "rpm", "maxOutput"];
+  function resetForm() {
+    editing = null;
+    $("form").reset();
+    $("expires").value = local(new Date(Date.now() + 864e5));
+    $("key").required = true;
+    $("key").placeholder = "";
+    $("formTitle").textContent = "New key";
+    $("submit").textContent = "Create key";
+    $("cancel").hidden = true;
+    selected.clear();
+    available = [];
+    renderModels();
+  }
+  function editKey(k) {
+    resetForm();
+    editing = k;
+    $("base").value = k.base;
+    $("base").oninput();
+    $("auth").value = k.auth || "bearer";
+    $("key").required = false;
+    $("key").placeholder = "leave empty to keep the current key";
+    $("expires").value = local(new Date(k.expires));
+    $("label").value = k.label || "";
+    for (const f of NUMBERS) $(f).value = k[f] ?? "";
+    $("period").value = k.period || "total";
+    $("ips").value = (k.ips || []).join(", ");
+    for (const m of k.models || []) if (!m.endsWith("*")) selected.add(m);
+    $("patterns").value = (k.models || []).filter((m) => m.endsWith("*")).join(", ");
+    $("formTitle").textContent = "Edit " + (k.label || k.id);
+    $("submit").textContent = "Save changes";
+    $("cancel").hidden = false;
+    $("result").style.display = "none";
+    renderModels();
+    $("form").scrollIntoView({ behavior: "smooth" });
+  }
+  $("cancel").onclick = resetForm;
+
+  $("form").onsubmit = async (e) => {
+    e.preventDefault();
+    $("err").textContent = $("msg").textContent = "";
+    const list = (id, sep) => $(id).value.split(sep).map((s) => s.trim()).filter(Boolean);
+    const payload = {
+      base: $("base").value.trim(),
+      auth: $("auth").value,
+      label: $("label").value.trim(),
+      period: $("period").value,
+      ips: list("ips", /[\s,]+/),
+      models: [...selected, ...list("patterns", ",")],
+    };
+    for (const f of NUMBERS) payload[f] = $(f).value === "" ? null : Number($(f).value);
+    if ($("key").value.trim()) payload.key = $("key").value.trim();
+    let data;
+    try {
+      payload.expires = new Date($("expires").value).toISOString();
+      data = await send(editing ? "/admin/keys/" + editing.id : "/admin/keys", editing ? "PATCH" : "POST", payload);
+    } catch (err) {
+      return ($("err").textContent = err.message === "Invalid time value" ? "Pick an expiry date and time." : err.message);
+    }
+    if (editing) {
+      resetForm();
+      $("msg").textContent = "Saved changes to " + (data.label || data.id) + ".";
+    } else {
+      $("outBase").textContent = endpoint;
+      $("outKey").textContent = data.id;
+      $("outSettings").textContent = JSON.stringify({
+        env: { ANTHROPIC_API_KEY: data.id, ANTHROPIC_BASE_URL: location.origin, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+        permissions: { allow: [], deny: [] },
+      }, null, 2);
+      $("result").style.display = "block";
+      $("key").value = "";
+    }
+    load();
+  };
+
+  function limits(k) {
+    const per = k.period === "month" ? " per month" : "";
+    const models = k.models || [];
+    return [
+      k.auth && k.auth !== "bearer" ? "header " + k.auth : "",
+      k.capUsd ? `cap $${k.capUsd}${per}` : "",
+      k.capTokens ? `cap ${k.capTokens.toLocaleString()} tokens${per}` : "",
+      k.rpm ? `${k.rpm} requests/min` : "",
+      k.maxOutput ? `max ${k.maxOutput.toLocaleString()} output tokens` : "",
+      models.length ? "models: " + (models.length > 3 ? models.slice(0, 3).join(", ") + ` +${models.length - 3} more` : models.join(", ")) : "",
+      k.ips?.length ? "IPs: " + k.ips.join(", ") : "",
+    ].filter(Boolean).join("\n") || "none";
+  }
+  function usage(u) {
+    const total = Object.entries(u.total || {});
+    if (!total.length) return "none";
+    const sum = (bucket) => Object.values(bucket || {}).reduce((s, m) => s + m.cost, 0);
+    const month = Object.values(u.months?.[thisMonth()] || {});
+    return `Lifetime ${usd(sum(u.total))}\nThis month ${usd(sum(u.months?.[thisMonth()]))} (${month.reduce((s, m) => s + m.requests, 0)} req)\n` +
+      total.map(([m, x]) => `${m}: ${x.priced ? usd(x.cost) : "unpriced"} (${x.requests} req, ${x.input.toLocaleString()} in / ${x.output.toLocaleString()} out)`).join("\n");
+  }
+
   async function load() {
-    const keys = await (await fetch("/admin/keys")).json();
-    $("list").innerHTML = "";
-    if (!keys.length) $("list").innerHTML = '<tr><td colspan="6" class="empty">No keys</td></tr>';
+    keys = await (await fetch("/admin/keys")).json();
     keys.sort((a, b) => Date.parse(b.expires) - Date.parse(a.expires));
+    $("list").replaceChildren(...(keys.length ? [] : [el("tr", {}, el("td", { colSpan: 6, className: "empty", textContent: "No keys" }))]));
     for (const k of keys) {
-      const tr = document.createElement("tr");
-      const active = Date.parse(k.expires) > Date.now();
-      const id = cell(k.id);
-      id.className = "id";
-      if (k.label) id.prepend(Object.assign(document.createElement("strong"), { textContent: k.label + "\n", style: "font-family: system-ui, sans-serif" }));
-      tr.append(id, cell(k.base));
-      const exp = cell(new Date(k.expires).toLocaleString());
-      if (!active) exp.append(Object.assign(document.createElement("div"), { className: "tag", textContent: "expired" }));
-      tr.append(exp);
-      tr.append(cell([
-        k.auth && k.auth !== "bearer" ? "header " + k.auth : "",
-        k.cap ? `cap $${k.cap}` : "",
-        k.rpm ? `${k.rpm}/min` : "",
-        k.models?.length ? k.models.join(", ") : "",
-      ].filter(Boolean).join("\n") || "none"));
-      const models = Object.entries(k.usage);
-      const total = models.reduce((sum, [, u]) => sum + u.cost, 0);
-      tr.append(cell(models.length
-        ? `Total $${total.toFixed(4)}\n` + models.map(([m, u]) =>
-            `${m}: ${u.priced ? "$" + u.cost.toFixed(4) : "unpriced"} (${u.requests} req, ${u.input} in / ${u.output} out)`).join("\n")
-        : "none"));
-      const td = document.createElement("td");
-      if (active) td.append(action("Extend", "ghost plain", async () => {
-        const v = prompt("New expiry (YYYY-MM-DDTHH:MM, local time)", local(new Date(Date.parse(k.expires) + 864e5)));
-        if (!v) return;
-        try { await send("/admin/keys/" + k.id, "PATCH", { expires: new Date(v).toISOString() }); } catch (e) { alert(e.message); }
-        load();
+      const id = el("td", { className: "id" }, ...(k.label ? [el("strong", { textContent: k.label, style: "font-family: system-ui, sans-serif" }), el("br")] : []), k.id);
+      const exp = el("td", { textContent: new Date(k.expires).toLocaleString() });
+      if (!k.active) exp.append(el("div", { className: "tag", textContent: "expired" }));
+      const actions = el("td");
+      if (k.active) actions.append(el("button", { className: "ghost plain", textContent: "Edit", onclick: () => editKey(k) }));
+      actions.append(el("button", {
+        className: "ghost",
+        textContent: k.active ? "Revoke" : "Delete",
+        onclick: async () => {
+          if (!confirm((k.active ? "Revoke " : "Delete ") + (k.label || k.id) + "? This cannot be undone.")) return;
+          await fetch("/admin/keys/" + k.id, { method: "DELETE" });
+          if (editing?.id === k.id) resetForm();
+          load();
+        },
       }));
-      td.append(action(active ? "Revoke" : "Delete", "ghost", async () => {
-        if (!confirm((active ? "Revoke " : "Delete ") + k.id + "?")) return;
-        await fetch("/admin/keys/" + k.id, { method: "DELETE" });
-        load();
-      }));
-      tr.append(td);
-      $("list").append(tr);
+      $("list").append(el("tr", {}, id, el("td", { textContent: k.base }), exp,
+        el("td", { className: "multi", textContent: limits(k) }), el("td", { className: "multi", textContent: usage(k.usage) }), actions));
     }
   }
 
-  $("create").onsubmit = async (e) => {
-    e.preventDefault();
-    $("err").textContent = "";
-    const num = (id) => ($(id).value === "" ? null : Number($(id).value));
-    let data;
-    try {
-      data = await send("/admin/keys", "POST", {
-        base: $("base").value.trim(),
-        key: $("key").value.trim(),
-        expires: new Date($("expires").value).toISOString(),
-        auth: $("auth").value,
-        label: $("label").value.trim(),
-        cap: num("cap"),
-        rpm: num("rpm"),
-        models: $("models").value.split(",").map((m) => m.trim()).filter(Boolean),
-      });
-    } catch (err) {
-      return ($("err").textContent = err.message);
-    }
-    $("outBase").textContent = endpoint;
-    $("outKey").textContent = data.id;
-    $("outSettings").textContent = JSON.stringify({
-      env: { ANTHROPIC_API_KEY: data.id, ANTHROPIC_BASE_URL: location.origin, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
-      permissions: { allow: [], deny: [] },
-    }, null, 2);
-    $("result").style.display = "block";
-    $("key").value = "";
-    load();
+  // Cells starting with = + - @ are prefixed so spreadsheets do not run them as formulas.
+  const cell = (v) => {
+    let s = String(v);
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
   };
+  $("export").onclick = () => {
+    const rows = [["key", "label", "month", "model", "requests", "input_tokens", "output_tokens", "cost_usd", "priced"]];
+    for (const k of keys) {
+      for (const [month, models] of Object.entries(k.usage.months || {}).sort()) {
+        for (const [model, u] of Object.entries(models)) rows.push([k.id, k.label || "", month, model, u.requests, u.input, u.output, u.cost.toFixed(6), u.priced]);
+      }
+      // Usage recorded before monthly tracking existed only has lifetime totals.
+      for (const [model, t] of Object.entries(k.usage.total || {})) {
+        const seen = Object.values(k.usage.months || {}).map((m) => m[model]).filter(Boolean);
+        const less = (f) => t[f] - seen.reduce((s, m) => s + m[f], 0);
+        if (less("requests") > 0) rows.push([k.id, k.label || "", "before monthly tracking", model, less("requests"), less("input"), less("output"), less("cost").toFixed(6), t.priced]);
+      }
+    }
+    const a = el("a", {
+      href: URL.createObjectURL(new Blob([rows.map((r) => r.map(cell).join(",")).join("\n") + "\n"], { type: "text/csv" })),
+      download: `key-router-usage-${new Date().toISOString().slice(0, 10)}.csv`,
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const PRICE_COLS = ["match", "in", "out", "read", "write5m", "write1h", "longAbove", "longScale", "fast"];
+  const PRICE_NAMES = ["Model name contains", "Input", "Output", "Cache read", "5m write", "1h write", "Long above", "Long multiplier", "Fast multiplier"];
+  let defaults = [];
+  function renderPrices(rows) {
+    $("prices").tBodies[0].replaceChildren(...rows.map((r) => {
+      const tr = el("tr", {}, ...PRICE_COLS.map((c, i) => {
+        const input = el("input", { value: r[c] ?? "", type: i ? "number" : "text", min: 0, step: "any", required: i < 6 });
+        input.setAttribute("aria-label", PRICE_NAMES[i]);
+        input.dataset.col = c;
+        return el("td", {}, input);
+      }));
+      tr.append(el("td", {}, el("button", { type: "button", className: "ghost", textContent: "Remove", onclick: () => tr.remove() })));
+      return tr;
+    }));
+  }
+  const readPrices = () => [...$("prices").tBodies[0].rows].map((tr) =>
+    Object.fromEntries([...tr.querySelectorAll("input")].map((i) => [i.dataset.col, i.dataset.col === "match" ? i.value : i.value === "" ? null : Number(i.value)])));
+  $("addPrice").onclick = () => renderPrices([...readPrices(), { match: "" }]);
+  $("resetPrices").onclick = () => renderPrices(structuredClone(defaults));
+  $("savePrices").onclick = async () => {
+    $("priceErr").textContent = $("priceMsg").textContent = "";
+    try {
+      renderPrices((await send("/admin/prices", "PUT", { prices: readPrices() })).prices);
+      $("priceMsg").textContent = "Prices saved.";
+    } catch (e) {
+      $("priceErr").textContent = e.message;
+    }
+  };
+  (async () => {
+    const data = await (await fetch("/admin/prices")).json();
+    defaults = data.defaults;
+    renderPrices(data.prices);
+  })();
 
   document.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     await navigator.clipboard.writeText($(b.dataset.copy).textContent);
     b.textContent = "copied";
     setTimeout(() => (b.textContent = "copy"), 1200);
   }));
+  resetForm();
   load();
 </script>
 </body>

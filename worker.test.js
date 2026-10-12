@@ -14,7 +14,7 @@ registerHooks({
     return next(url, context);
   },
 });
-const { default: worker, Meter } = await import("./worker.js");
+const { default: worker, Meter, cost, inRange, parseIp, DEFAULT_PRICES } = await import("./worker.js");
 
 const store = new Map();
 const meters = new Map();
@@ -112,15 +112,19 @@ test("upstream failure becomes 502", async () => {
   globalThis.fetch = real;
 });
 
-test("cost follows Anthropic list prices", async () => {
-  const { cost } = await import("./worker.js");
+test("cost follows Anthropic list prices", () => {
   const M = 1e6;
   assert.equal(cost("claude-opus-5-5", { input_tokens: M, output_tokens: M }), 24);
   assert.equal(cost("claude-sonnet-5-5", { input_tokens: M, output_tokens: M }), 12);
   assert.equal(cost("anthropic/claude-haiku-5.5", { input_tokens: M, output_tokens: M }), 3);
   assert.equal(cost("claude-opus-5-5", { cache_read_input_tokens: M, cache_creation_input_tokens: M }), 5.2);
   assert.equal(cost("claude-opus-5-5", { cache_creation_input_tokens: M, cache_creation: { ephemeral_1h_input_tokens: M } }), 8);
-  assert.equal(cost("claude-opus-4-8", { input_tokens: 5 }), null);
+  assert.equal(cost("gpt-x", { input_tokens: 5 }), null);
+  assert.equal(cost("claude-sonnet-5-5", { cache_read_input_tokens: M }), 0.1, "Sonnet 5.5 cache reads are 0.05x");
+  assert.equal(cost("claude-sonnet-5", { cache_read_input_tokens: M }), 0.2, "the longest matching name wins");
+  assert.equal(cost("claude-opus-5-5", { input_tokens: M, speed: "fast" }), 8);
+  assert.ok(Math.abs(cost("claude-opus-5-5", { input_tokens: M, inference_geo: "us" }) - 4.4) < 1e-9);
+  assert.equal(cost("claude-haiku-5-5", { input_tokens: 50e3, cache_read_input_tokens: 60e3 }), (50e3 * 0.5 + 60e3 * 0.05) / M, "cache tokens count toward the 100K threshold");
 });
 
 test("messages calls are metered, streaming and not", async () => {
@@ -138,7 +142,7 @@ test("messages calls are metered, streaming and not", async () => {
     'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":300}}',
   ].join("\n\n"), "text/event-stream");
   globalThis.fetch = real;
-  const u = (await (await req("/admin/keys", { headers: adminAuth })).json()).find((k) => k.id === id).usage;
+  const u = (await (await req("/admin/keys", { headers: adminAuth })).json()).find((k) => k.id === id).usage.total;
   assert.ok(Math.abs(u["claude-opus-5-5"].cost - 0.014) < 1e-9);
   assert.ok(Math.abs(u["claude-sonnet-5-5"].cost - 0.007) < 1e-9);
   assert.equal(u["claude-sonnet-5-5"].output, 300);
@@ -193,7 +197,7 @@ test("rate limit and spend cap return 429", async () => {
   assert.equal((await req("/v1/models", { headers: bearer(limited) })).status, 200);
   assert.equal((await req("/v1/models", { headers: bearer(limited) })).status, 429);
 
-  const capped = (await (await create({ base: "https://x.example", key: "k", expires: inAnHour, cap: 0.01 })).json()).id;
+  const capped = (await (await create({ base: "https://x.example", key: "k", expires: inAnHour, capUsd: 0.01 })).json()).id;
   const real = globalThis.fetch;
   globalThis.fetch = async () => Response.json({ model: "claude-opus-5-5", usage: { input_tokens: 1000, output_tokens: 500 } });
   assert.equal((await req("/v1/messages", { method: "POST", headers: bearer(capped), body: "{}" })).status, 200);
@@ -207,13 +211,17 @@ test("expiry can be extended while active", async () => {
   const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour, label: "ci" })).json();
   const later = new Date(Date.now() + 7200e3).toISOString();
   const patch = (body) => req("/admin/keys/" + id, { method: "PATCH", headers: { ...adminAuth, "content-type": "application/json" }, body: JSON.stringify(body) });
-  const res = await (await patch({ expires: later, key: "stolen", base: "https://evil.example" })).json();
+  const res = await (await patch({ expires: later, key: "" })).json();
   assert.equal(res.expires, later);
   assert.equal(res.label, "ci");
   assert.equal(env.METER.get(id).storage.alarmAt, Date.parse(later));
+  assert.equal(JSON.parse(store.get(id).value).key, "k", "a blank key keeps the current one");
+  await patch({ key: "rotated", base: "https://y.example/", capUsd: 5 });
   const route = JSON.parse(store.get(id).value);
-  assert.equal(route.key, "k", "PATCH must not change the real key");
-  assert.equal(route.base, "https://x.example");
+  assert.deepEqual([route.key, route.base, route.capUsd, route.expires], ["rotated", "https://y.example", 5, later]);
+  assert.equal((await patch({ capUsd: null })).status, 200);
+  assert.equal(JSON.parse(store.get(id).value).capUsd, undefined, "null clears a limit");
+  assert.equal((await patch({ base: "http://insecure.example" })).status, 400);
   assert.equal((await patch({ expires: "2020-01-01" })).status, 400);
 });
 
@@ -253,8 +261,121 @@ test("OpenAI chat and responses calls are metered", async () => {
   await call("/v1/responses", JSON.stringify({ object: "response", model: "gpt-x", usage: { input_tokens: 50, output_tokens: 7, input_tokens_details: { cached_tokens: 0 } } }), "application/json");
   globalThis.fetch = real;
   const u = (await (await req("/admin/keys", { headers: adminAuth })).json()).find((k) => k.id === id).usage;
-  const sonnet = u["anthropic/claude-sonnet-5.5"];
+  const sonnet = u.total["anthropic/claude-sonnet-5.5"];
   assert.deepEqual([sonnet.input, sonnet.output], [3000, 100]);
-  assert.ok(Math.abs(sonnet.cost - (2000 * 2 + 1000 * 0.2 + 100 * 10) / 1e6) < 1e-12);
-  assert.deepEqual([u["gpt-x"].input, u["gpt-x"].output, u["gpt-x"].priced], [50, 7, false]);
+  assert.ok(Math.abs(sonnet.cost - (2000 * 2 + 1000 * 0.1 + 100 * 10) / 1e6) < 1e-12);
+  assert.deepEqual([u.total["gpt-x"].input, u.total["gpt-x"].output, u.total["gpt-x"].priced], [50, 7, false]);
+  assert.deepEqual(u.months[new Date().toISOString().slice(0, 7)]["gpt-x"].requests, 1);
+});
+
+const replying = (body, type = "application/json") => async (url, init) => {
+  sent = { url, init, headers: init.headers };
+  return new Response(typeof body === "string" ? body : JSON.stringify(body), { headers: { "content-type": type } });
+};
+async function withUpstream(fn, run) {
+  const real = globalThis.fetch;
+  globalThis.fetch = fn;
+  try { return await run(); } finally { globalThis.fetch = real; }
+}
+const opusCall = { model: "claude-opus-5-5", usage: { input_tokens: 1000, output_tokens: 500 } };
+
+test("token cap and monthly period", async () => {
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour, capTokens: 1500, period: "month" })).json();
+  const call = () => req("/v1/messages", { method: "POST", headers: bearer(id), body: "{}" });
+  await withUpstream(replying(opusCall), async () => {
+    assert.equal((await call()).status, 200);
+    await Promise.all(pending.splice(0));
+    const blocked = await call();
+    assert.equal(blocked.status, 429);
+    assert.match((await blocked.json()).error.message, /token cap of 1500 for this month/);
+  });
+  const { meter } = env.METER.get(id);
+  const months = await meter.storage.get("months");
+  months["2000-01"] = months[Object.keys(months)[0]];
+  delete months[Object.keys(months)[0]];
+  assert.equal((await withUpstream(replying(opusCall), call)).status, 200, "last month's usage does not count");
+  assert.equal((await create({ base: "https://x.example", key: "k", expires: inAnHour, period: "week" })).status, 400);
+  assert.equal((await create({ base: "https://x.example", key: "k", expires: inAnHour, capTokens: 0.5 })).status, 400);
+});
+
+test("max output tokens are clamped or filled in", async () => {
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour, maxOutput: 100 })).json();
+  const bodyFor = async (path, payload) => {
+    await withUpstream(replying({}), () => req(path, { method: "POST", headers: bearer(id), body: JSON.stringify(payload) }));
+    return JSON.parse(sent.init.body);
+  };
+  assert.equal((await bodyFor("/v1/messages", { model: "m", max_tokens: 32000 })).max_tokens, 100);
+  assert.equal((await bodyFor("/v1/messages", { model: "m", max_tokens: 50 })).max_tokens, 50);
+  assert.equal((await bodyFor("/v1/chat/completions", { model: "m", max_completion_tokens: 900 })).max_completion_tokens, 100);
+  assert.equal((await bodyFor("/v1/chat/completions", { model: "m" })).max_tokens, 100);
+  assert.equal((await bodyFor("/v1/responses", { model: "m" })).max_output_tokens, 100);
+  assert.equal((await bodyFor("/v1/messages/count_tokens", { model: "m" })).max_tokens, undefined, "non-generation calls get no new field");
+});
+
+test("IP allowlist", async () => {
+  assert.ok(inRange("203.0.113.9", "203.0.113.0/24"));
+  assert.ok(!inRange("203.0.114.9", "203.0.113.0/24"));
+  assert.ok(inRange("2001:db8::1", "2001:db8::/32"));
+  assert.ok(inRange("::ffff:10.0.0.1", "::ffff:10.0.0.0/120"));
+  assert.ok(!inRange("2001:db9::1", "2001:db8::/32"));
+  assert.ok(!inRange("10.0.0.1", "2001:db8::/32"));
+  assert.ok(inRange("10.1.2.3", "10.1.2.3"));
+  for (const bad of ["1.2.3.256", "1::2::3", "zz::1", "1.2.3"]) assert.equal(parseIp(bad), null, bad);
+  assert.equal(parseIp("1:2:3:4:5:6:7:8").bits, 128);
+
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour, ips: ["203.0.113.0/24", "2001:db8::/32"] })).json();
+  const from = (ip) => req("/v1/models", { headers: { ...bearer(id), "cf-connecting-ip": ip } });
+  assert.equal((await from("203.0.113.7")).status, 200);
+  assert.equal((await from("2001:db8:0:1::5")).status, 200);
+  assert.equal((await from("198.51.100.1")).status, 403);
+  assert.equal((await req("/v1/models", { headers: bearer(id) })).status, 403);
+  assert.equal((await create({ base: "https://x.example", key: "k", expires: inAnHour, ips: ["10.0.0.0/33"] })).status, 400);
+});
+
+test("model list endpoint uses the right auth and the stored key", async () => {
+  const listModels = (body) => req("/admin/models", { method: "POST", headers: { ...adminAuth, "content-type": "application/json" }, body: JSON.stringify(body) });
+  const res = await withUpstream(replying({ data: [{ id: "claude-b" }, { id: "claude-a" }, { id: "claude-a" }] }), () =>
+    listModels({ base: "https://api.anthropic.com/v1/", key: "real", auth: "x-api-key" }));
+  assert.deepEqual((await res.json()).models, ["claude-a", "claude-b"]);
+  assert.equal(sent.url, "https://api.anthropic.com/v1/models?limit=1000");
+  assert.equal(sent.headers.get("x-api-key"), "real");
+  assert.equal(sent.headers.get("anthropic-version"), "2023-06-01");
+
+  const { id } = await (await create({ base: "https://y.example/v1", key: "stored", expires: inAnHour })).json();
+  const byId = await withUpstream(replying({ models: [{ name: "gemma" }], object: "list" }), () => listModels({ id }));
+  assert.deepEqual((await byId.json()).models, ["gemma"]);
+  assert.equal(sent.url, "https://y.example/v1/models");
+  assert.equal(sent.headers.get("authorization"), "Bearer stored");
+
+  const failed = await withUpstream(async () => Response.json({ error: { message: "bad key" } }, { status: 401 }), () => listModels({ id }));
+  assert.equal(failed.status, 502);
+  assert.match((await failed.json()).error.message, /401: bad key/);
+  assert.equal((await listModels({ base: "https://y.example" })).status, 400);
+});
+
+test("allowed models also filter the client's model list", async () => {
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour, models: ["claude-haiku-*"] })).json();
+  const res = await withUpstream(replying({ data: [{ id: "claude-haiku-5-5" }, { id: "claude-opus-5-5" }] }), () =>
+    req("/v1/models", { headers: bearer(id) }));
+  assert.deepEqual((await res.json()).data.map((m) => m.id), ["claude-haiku-5-5"]);
+});
+
+test("prices are editable and used for metering", async () => {
+  const put = (prices) => req("/admin/prices", { method: "PUT", headers: { ...adminAuth, "content-type": "application/json" }, body: JSON.stringify({ prices }) });
+  const got = await (await req("/admin/prices", { headers: adminAuth })).json();
+  assert.deepEqual(got.defaults, DEFAULT_PRICES);
+  assert.equal((await put([{ match: "", in: 1, out: 1, read: 1, write5m: 1, write1h: 1 }])).status, 400);
+  assert.equal((await put([{ match: "x", in: -1, out: 1, read: 1, write5m: 1, write1h: 1 }])).status, 400);
+  assert.equal((await put([{ match: "x", in: 1, out: 1, read: 1, write5m: 1, write1h: 1, fast: 0 }])).status, 400);
+  assert.equal((await put([...DEFAULT_PRICES, { match: "deepseek-chat", in: "1", out: 2, read: 0.1, write5m: 1, write1h: 1, fast: "" }])).status, 200);
+  assert.deepEqual(JSON.parse(store.get("config:prices").value).at(-1), { match: "deepseek-chat", in: 1, out: 2, read: 0.1, write5m: 1, write1h: 1 });
+
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour })).json();
+  await withUpstream(replying({ model: "deepseek-chat", usage: { prompt_tokens: 1e6, completion_tokens: 1e6 } }), () =>
+    req("/v1/chat/completions", { method: "POST", headers: bearer(id), body: "{}" }));
+  await Promise.all(pending.splice(0));
+  const u = (await (await req("/admin/keys", { headers: adminAuth })).json()).find((k) => k.id === id).usage.total;
+  assert.equal(u["deepseek-chat"].cost, 3);
+  assert.ok(!(await (await req("/admin/keys", { headers: adminAuth })).json()).some((k) => k.id === "config:prices"));
+  await put(DEFAULT_PRICES);
 });

@@ -53,21 +53,20 @@ Keys live in each account's own KV store, so keys made on one deployment do not 
 
 ## Creating keys
 
-Open `https://<worker>.workers.dev/admin` and sign in with the admin password (the username is ignored). Then enter:
+Open `https://<worker>.workers.dev/admin` and sign in with the admin password (the username is ignored). Then:
 
-- the provider's base URL exactly as its docs give it (for example `https://openrouter.ai/api/v1`)
-- the real API key
-- how the provider expects the key: `Authorization: Bearer` (most providers), `x-api-key` (Anthropic), `api-key` (Azure) or `x-goog-api-key` (Gemini). The page picks this for you for known hosts.
-- an expiry
+1. Pick a provider. Presets fill in the base URL and auth header for Anthropic, OpenAI, Google Gemini, DeepSeek, xAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI, Moonshot, Zhipu, Alibaba Qwen, Cohere and OpenRouter. For anything else choose Custom endpoint and enter the base URL exactly as the provider's docs give it; the real key can be sent as `Authorization: Bearer` (most providers), `x-api-key` (Anthropic), `api-key` (Azure) or `x-goog-api-key` (Gemini).
+2. Enter the real API key and an expiry, and optionally a label.
+3. Optionally restrict models: Load models from provider lists everything the provider's `<base>/models` endpoint returns for that key, and the boxes you tick become the only models the gateway key may use. Extra patterns take names by hand, and a trailing `*` matches a prefix (`claude-haiku-*`). With nothing ticked and no patterns, every model is allowed.
+4. Optionally set limits, all empty by default:
+   - Spend cap in USD and token cap (input plus output tokens), counted over the key's lifetime or per calendar month (UTC). Once reached, requests get `429`.
+   - Requests per minute; extra requests get `429`.
+   - Max output tokens per request. Larger `max_tokens`, `max_completion_tokens` or `max_output_tokens` values are lowered to it, and Chat Completions and Responses calls that set none get it added.
+   - Allowed client IPs, as addresses or CIDR ranges, IPv4 or IPv6. Calls from anywhere else get `403`.
 
-Optional settings per key:
+The page returns the endpoint and gateway key to hand out. Edit changes any setting of an active key, including its expiry, endpoint and real key (leave the key empty to keep it). Keys expire on their own.
 
-- a label, to tell keys apart
-- a spend cap in USD; once the key's metered spend reaches it, requests get `429`
-- a requests-per-minute limit; extra requests get `429`
-- an allowed-model list; requests for any other model get `403`. A trailing `*` matches a prefix, so `claude-haiku-*` allows every Haiku model.
-
-The page returns the endpoint and gateway key to hand out. Keys expire on their own, and Extend moves the expiry of an active key.
+A key with a model list also gets a filtered `GET /v1/models`, so clients only see the models they may use.
 
 ## Client configuration
 
@@ -93,13 +92,15 @@ The base URL has no `/v1`; Claude Code appends `/v1/messages` itself.
 
 ## Cost tracking
 
-Every successful `POST` to `/v1/messages`, `/v1/chat/completions` or `/v1/responses` is metered. The worker reads the model and token counts from the response (streamed or not), prices Claude models at Anthropic's list rates for Claude Opus 5.5, Sonnet 5.5 and Haiku 5.5 (including cache reads and 5-minute and 1-hour cache writes), and adds them to a per-key total. The admin page shows each key's spend per model.
+Every successful `POST` to `/v1/messages`, `/v1/chat/completions` or `/v1/responses` is metered. The worker reads the model and token counts from the response (streamed or not), prices them, and adds them to the key's lifetime and monthly totals. The admin page shows each key's spend per model, and Export usage CSV downloads every key's usage by month and model.
+
+Prices are edited in the Prices section of the admin page. A row prices every model whose name contains its text, with dots treated as dashes, so `claude-opus-5-5` also prices `anthropic/claude-opus-5.5`; the longest matching row wins. Each row has input, output, cache-read and 5-minute and 1-hour cache-write rates in USD per million tokens, plus optional long-context and fast-mode multipliers. The defaults are Anthropic's list prices for current Claude models, checked against the [pricing page](https://platform.claude.com/docs/en/about-claude/pricing) on 2026-10-12, including Claude Haiku 5.5's 5x rates for prompts over 100,000 tokens, fast mode, and the 1.1x US data residency multiplier. Models without a matching row are counted by tokens and shown as unpriced. Restore defaults puts the list prices back.
 
 - Totals are kept in a Durable Object per key, so concurrent requests never lose updates. Revoking a key deletes its totals.
+- A request is priced when it finishes, so editing prices does not change earlier totals.
 - Streamed Chat Completions only report usage when the provider sends it; add `"stream_options": {"include_usage": true}` to the request if yours does not by default.
-- The spend cap is checked before each request, so requests already in flight when the cap is reached can take spend slightly past it. Unpriced models do not count toward the cap.
-- Prices live in `PRICES` in `worker.js`. Other models are counted by tokens and shown as unpriced.
-- Figures are list-price estimates. Discounts, batch pricing and fast mode are not modelled, so treat them as a monitor, not an invoice.
+- Caps are checked before each request, so requests already in flight when a cap is reached can go slightly past it. Unpriced models count toward the token cap but not the spend cap.
+- Figures are list-price estimates. Discounts and batch pricing are not modelled, so treat them as a monitor, not an invoice.
 
 ## Revoking
 
@@ -109,7 +110,7 @@ When a key expires, the real provider key is erased from storage. The gateway ke
 
 ## Limits
 
-The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request, and keys with a spend cap or rate limit make one more. Malformed keys are rejected before any KV read. Workers Paid raises this to 10 million per month.
+The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request, and keys with a cap or rate limit make one more. Listing keys on the admin page reads each key once. Malformed keys are rejected before any KV read. Workers Paid raises this to 10 million per month.
 
 The gateway does not cap spend, so set credit limits on the provider side. Real keys are stored in Workers KV and are never returned by the admin API.
 
