@@ -104,6 +104,10 @@ export class Meter {
   async fetch(req) {
     const path = new URL(req.url).pathname;
     if (req.method === "DELETE") return Response.json(await this.wipe());
+    if (path === "/reset") {
+      await this.storage.delete(["models", "months", "hits"]);
+      return Response.json({ ok: true });
+    }
     if (path === "/schedule") {
       const { id, expires } = await req.json();
       await this.storage.put("key", { id, expires });
@@ -241,7 +245,12 @@ export function inRange(addr, range) {
 async function proxy(req, env, url, ctx) {
   if (req.method === "OPTIONS") return cors(new Response(null, { status: 204 }), req);
   const h = req.headers;
-  const presented = h.get("authorization")?.replace(/^Bearer\s+/i, "") || h.get("x-api-key") || h.get("api-key") || h.get("x-goog-api-key") || "";
+  // Gemini clients may send the key as ?key=, which must not travel on to the provider.
+  const query = new URLSearchParams(url.search);
+  const queryKey = query.get("key");
+  query.delete("key");
+  const search = queryKey === null ? url.search : query.size ? "?" + query : "";
+  const presented = h.get("authorization")?.replace(/^Bearer\s+/i, "") || h.get("x-api-key") || h.get("api-key") || h.get("x-goog-api-key") || queryKey || "";
   // Only well-formed ids reach KV, so random tokens cannot burn the daily KV read quota.
   const route = KEY_ID.test(presented) ? await env.KEYS.get(presented, "json") : null;
   if (!route?.key || !(Date.now() < Date.parse(route.expires))) return cors(json(401, "invalid or expired key"), req);
@@ -255,11 +264,14 @@ async function proxy(req, env, url, ctx) {
   const path = url.pathname.replace(/^\/v1(?=\/|$)/, "");
   let body = req.body;
   if (req.method === "POST" && (route.models?.length || route.maxOutput)) {
-    body = await req.text();
+    // Bytes, not text, so non-JSON uploads such as audio pass through unchanged.
+    body = await req.arrayBuffer();
     let parsed;
-    try { parsed = JSON.parse(body); } catch {}
-    if (route.models?.length && !allowed(route.models, parsed?.model)) {
-      return cors(json(403, `model ${parsed?.model ?? "(none)"} is not allowed for this key`), req);
+    try { parsed = JSON.parse(new TextDecoder().decode(body)); } catch {}
+    // Gemini's native API names the model in the path: /models/<name>:generateContent.
+    const model = parsed?.model ?? path.match(/\/models\/([^/:]+)/)?.[1];
+    if (route.models?.length && !allowed(route.models, model) && !allowed(route.models, "models/" + model)) {
+      return cors(json(403, `model ${model ?? "(none)"} is not allowed for this key`), req);
     }
     if (route.maxOutput && parsed && typeof parsed === "object") {
       const present = OUTPUT_FIELDS.filter((f) => typeof parsed[f] === "number");
@@ -280,7 +292,7 @@ async function proxy(req, env, url, ctx) {
   headers.set(...authHeader(route));
   try {
     // A followed redirect would carry the real key to whatever host the provider names.
-    const res = await fetch(route.base + path + url.search, { method: req.method, headers, body, redirect: "manual" });
+    const res = await fetch(route.base + path + search, { method: req.method, headers, body, redirect: "manual" });
     if (ctx && req.method === "POST" && METERED.has(path) && res.ok) ctx.waitUntil(record(env, presented, res.clone()));
     // Clients that list models only see the ones this key may use.
     if (route.models?.length && req.method === "GET" && path === "/models" && res.ok) {
@@ -376,12 +388,17 @@ async function admin(req, env, url) {
   }
 
   if (url.pathname === "/admin/keys" && req.method === "POST" && body) {
-    if (!validBase(body.base) || !body.key) return json(400, "need an https endpoint and an API key");
+    // A duplicate may reuse the real key of the key it copies, so the browser never needs it.
+    const source = !body.key && KEY_ID.test(body.from || "") ? await env.KEYS.get(body.from, "json") : null;
+    const key = body.key || source?.key;
+    if (!validBase(body.base) || !key) return json(400, "need an https endpoint and an API key");
     const s = settings(body);
     if (s.error) return json(400, s.error);
     const id = "sk-gw-" + crypto.randomUUID().replaceAll("-", "");
-    return save(env, id, { base: body.base.replace(/\/+$/, ""), key: body.key, ...s });
+    return save(env, id, { base: body.base.replace(/\/+$/, ""), key, ...s });
   }
+  const usage = url.pathname.match(/^\/admin\/keys\/(sk-gw-[0-9a-f]{32})\/usage$/);
+  if (usage && req.method === "DELETE") return meter(env, usage[1], "/reset", { method: "POST" });
 
   const match = url.pathname.match(/^\/admin\/keys\/(sk-gw-[0-9a-f]{32})$/);
   if (match && req.method === "PATCH" && body) {

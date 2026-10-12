@@ -266,7 +266,7 @@
     const key = $("key").value.trim();
     const body = { base: $("base").value.trim(), auth: $("auth").value };
     if (key) body.key = key;
-    else if (editing) body.id = editing.id;
+    else if (editing || copying) body.id = (editing || copying).id;
     $("loadModels").disabled = true;
     try {
       available = (await send("/admin/models", "POST", body)).models;
@@ -279,10 +279,11 @@
   };
 
   let editing = null;
+  let copying = null;
   let keys = [];
   const NUMBERS = ["capUsd", "capTokens", "rpm", "maxOutput"];
   function resetForm() {
-    editing = null;
+    editing = copying = null;
     $("form").reset();
     $("expires").value = local(new Date(Date.now() + 864e5));
     $("key").required = true;
@@ -294,23 +295,25 @@
     available = [];
     renderModels();
   }
-  function editKey(k) {
+  // Fills the form from a key, to edit it or to create a copy that reuses its real key.
+  function editKey(k, copy) {
     resetForm();
-    editing = k;
+    if (copy) copying = k;
+    else editing = k;
     $("base").value = k.base;
     $("base").oninput();
     $("auth").value = k.auth || "bearer";
     $("key").required = false;
-    $("key").placeholder = "leave empty to keep the current key";
-    $("expires").value = local(new Date(k.expires));
+    $("key").placeholder = copy ? "leave empty to reuse the copied key's real key" : "leave empty to keep the current key";
+    if (!copy) $("expires").value = local(new Date(k.expires));
     $("label").value = k.label || "";
     for (const f of NUMBERS) $(f).value = k[f] ?? "";
     $("period").value = k.period || "total";
     $("ips").value = (k.ips || []).join(", ");
     for (const m of k.models || []) if (!m.endsWith("*")) selected.add(m);
     $("patterns").value = (k.models || []).filter((m) => m.endsWith("*")).join(", ");
-    $("formTitle").textContent = "Edit " + (k.label || k.id);
-    $("submit").textContent = "Save changes";
+    $("formTitle").textContent = (copy ? "New key, copied from " : "Edit ") + (k.label || k.id);
+    $("submit").textContent = copy ? "Create key" : "Save changes";
     $("cancel").hidden = false;
     $("result").style.display = "none";
     renderModels();
@@ -332,6 +335,7 @@
     };
     for (const f of NUMBERS) payload[f] = $(f).value === "" ? null : Number($(f).value);
     if ($("key").value.trim()) payload.key = $("key").value.trim();
+    else if (copying) payload.from = copying.id;
     let data;
     try {
       payload.expires = new Date($("expires").value).toISOString();
@@ -386,7 +390,20 @@
       const exp = el("td", { textContent: new Date(k.expires).toLocaleString() });
       if (!k.active) exp.append(el("div", { className: "tag", textContent: "expired" }));
       const actions = el("td");
-      if (k.active) actions.append(el("button", { className: "ghost plain", textContent: "Edit", onclick: () => editKey(k) }));
+      if (k.active) {
+        actions.append(
+          el("button", { className: "ghost plain", textContent: "Edit", onclick: () => editKey(k) }), el("br"),
+          el("button", { className: "ghost plain", textContent: "Duplicate", onclick: () => editKey(k, true) }), el("br"),
+          el("button", {
+            className: "ghost plain",
+            textContent: "Reset usage",
+            onclick: async () => {
+              if (!confirm("Reset the usage totals of " + (k.label || k.id) + "? Its caps start counting from zero.")) return;
+              await fetch(`/admin/keys/${k.id}/usage`, { method: "DELETE" });
+              load();
+            },
+          }), el("br"));
+      }
       actions.append(el("button", {
         className: "ghost",
         textContent: k.active ? "Revoke" : "Delete",

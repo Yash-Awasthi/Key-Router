@@ -30,6 +30,7 @@ const env = {
           get: async (k) => data.get(k),
           put: async (k, v) => void data.set(k, v),
           deleteAll: async () => data.clear(),
+          delete: async (keys) => keys.forEach((k) => data.delete(k)),
           setAlarm: async (t) => void (storage.alarmAt = t),
           deleteAlarm: async () => void (storage.alarmAt = null),
         };
@@ -378,4 +379,31 @@ test("prices are editable and used for metering", async () => {
   assert.equal(u["deepseek-chat"].cost, 3);
   assert.ok(!(await (await req("/admin/keys", { headers: adminAuth })).json()).some((k) => k.id === "config:prices"));
   await put(DEFAULT_PRICES);
+});
+
+test("Gemini-style query key, path model and binary bodies", async () => {
+  const { id } = await (await create({ base: "https://g.example/v1beta", key: "real", expires: inAnHour, auth: "x-goog-api-key", models: ["gemini-pro"] })).json();
+  await withUpstream(replying({}), () => req(`/v1/models/gemini-pro:generateContent?alt=sse&key=${id}`, { method: "POST", body: "{}" }));
+  assert.equal(sent.url, "https://g.example/v1beta/models/gemini-pro:generateContent?alt=sse", "the gateway key stays out of the upstream URL");
+  assert.equal(sent.headers.get("x-goog-api-key"), "real");
+  assert.equal((await req(`/v1/models/gemini-ultra:generateContent?key=${id}`, { method: "POST", body: "{}" })).status, 403);
+
+  const capped = (await (await create({ base: "https://x.example", key: "k", expires: inAnHour, maxOutput: 10 })).json()).id;
+  const bytes = new Uint8Array([0xff, 0x00, 0xc3, 0x28, 0x80]);
+  await withUpstream(replying({}), () => req("/v1/audio/transcriptions", { method: "POST", headers: bearer(capped), body: bytes }));
+  assert.deepEqual(new Uint8Array(sent.init.body), bytes);
+});
+
+test("usage can be reset and keys duplicated without resending the real key", async () => {
+  const { id } = await (await create({ base: "https://x.example", key: "secret", expires: inAnHour, capUsd: 0.01, label: "orig" })).json();
+  await withUpstream(replying(opusCall), () => req("/v1/messages", { method: "POST", headers: bearer(id), body: "{}" }));
+  await Promise.all(pending.splice(0));
+  assert.equal((await req("/v1/messages", { method: "POST", headers: bearer(id), body: "{}" })).status, 429);
+  assert.equal((await req(`/admin/keys/${id}/usage`, { method: "DELETE", headers: adminAuth })).status, 200);
+  assert.equal((await withUpstream(replying(opusCall), () => req("/v1/messages", { method: "POST", headers: bearer(id), body: "{}" }))).status, 200);
+  assert.equal(env.METER.get(id).storage.alarmAt, Date.parse(inAnHour), "reset keeps the expiry alarm");
+
+  const copy = await (await create({ base: "https://x.example", from: id, expires: inAnHour, label: "copy" })).json();
+  assert.equal(JSON.parse(store.get(copy.id).value).key, "secret");
+  assert.equal((await create({ base: "https://x.example", from: "sk-gw-" + "f".repeat(32), expires: inAnHour })).status, 400);
 });

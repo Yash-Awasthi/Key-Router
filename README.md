@@ -64,13 +64,13 @@ Open `https://<worker>.workers.dev/admin` and sign in with the admin password (t
    - Max output tokens per request. Larger `max_tokens`, `max_completion_tokens` or `max_output_tokens` values are lowered to it, and Chat Completions and Responses calls that set none get it added.
    - Allowed client IPs, as addresses or CIDR ranges, IPv4 or IPv6. Calls from anywhere else get `403`.
 
-The page returns the endpoint and gateway key to hand out. Edit changes any setting of an active key, including its expiry, endpoint and real key (leave the key empty to keep it). Keys expire on their own.
+The page returns the endpoint and gateway key to hand out. Edit changes any setting of an active key, including its expiry, endpoint and real key (leave the key empty to keep it). Duplicate starts a new key with the same settings and, unless you enter another, the same real key. Reset usage clears a key's totals so its caps count from zero. Keys expire on their own.
 
 A key with a model list also gets a filtered `GET /v1/models`, so clients only see the models they may use.
 
 ## Client configuration
 
-OpenAI-compatible clients set their base URL to `https://<worker>.workers.dev/v1` and send the gateway key as `Authorization: Bearer`, `x-api-key`, `api-key` or `x-goog-api-key`. The gateway answers CORS preflight requests, so browser apps can call it directly.
+OpenAI-compatible clients set their base URL to `https://<worker>.workers.dev/v1` and send the gateway key as `Authorization: Bearer`, `x-api-key`, `api-key`, `x-goog-api-key` or a `?key=` query parameter. The query parameter is removed before the request is forwarded. The gateway answers CORS preflight requests, so browser apps can call it directly.
 
 Claude Code works when the provider exposes an Anthropic-compatible endpoint (OpenRouter does). The admin page prints a ready-to-paste `~/.claude/settings.json` after each key is created:
 
