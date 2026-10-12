@@ -40,8 +40,9 @@
   td.id { font: 12px ui-monospace, monospace; word-break: break-all; min-width: 150px; }
   td.multi { white-space: pre-line; }
   #prices td { padding: 4px; }
+  #prices thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
   #prices input { padding: 6px; min-width: 56px; }
-  #prices td:first-child input { min-width: 150px; }
+  #prices td:first-child input { min-width: 240px; }
   #prices td:nth-child(7) input { min-width: 80px; }
   .tag { color: var(--danger); font-size: 12px; }
   .result { display: none; margin-top: 16px; padding: 12px; border-radius: 6px; border: 1px dashed var(--accent); }
@@ -55,12 +56,24 @@
   .err { color: var(--danger); margin-top: 10px; }
   .msg { color: var(--ok); margin-top: 10px; }
   .empty { color: var(--muted); }
+  .warn { border-color: var(--danger); color: var(--danger); }
+  .days { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+  .days label { display: flex; align-items: center; margin: 0; color: var(--text); font-size: 14px; }
+  textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, monospace; resize: vertical; }
+  ul.plain { list-style: none; padding: 0; margin: 8px 0 0; }
+  ul.plain li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 </style>
 </head>
 <body>
 <main>
-  <h1>Key Router</h1>
-  <p class="sub">Wrap a provider key in a disposable key that expires on its own.</p>
+  <div class="head">
+    <div>
+      <h1>Key Router</h1>
+      <p class="sub">Wrap a provider key in a disposable key that expires on its own.</p>
+    </div>
+    <button type="button" class="secondary small" id="signout" hidden>Sign out</button>
+  </div>
+  <div class="card warn" id="plaintext" hidden>Real API keys are stored unencrypted. Set the <code>ENCRYPTION_KEY</code> secret (see the README) so new and edited keys are encrypted.</div>
 
   <form class="card" id="form">
     <div class="head">
@@ -141,7 +154,44 @@
       </div>
       <label for="ips">Allowed client IPs or CIDR ranges (comma separated)</label>
       <input id="ips" placeholder="any address, or e.g. 203.0.113.0/24, 2001:db8::/32">
+      <div class="grid">
+        <div>
+          <label for="downAt">Downgrade past this % of a cap</label>
+          <input id="downAt" type="number" min="1" max="100" step="any" placeholder="never">
+        </div>
+      </div>
+      <label for="downMap">Downgrade rules, one per line: requested model => cheaper model (a trailing * matches a prefix)</label>
+      <textarea id="downMap" rows="2" placeholder="claude-opus-* => claude-sonnet-5-5&#10;claude-sonnet-* => claude-haiku-5-5"></textarea>
+      <p class="hint">Requests already running finish on their model; only new requests are rerouted.</p>
     </fieldset>
+
+    <fieldset>
+      <legend>Time window (leave all days unticked for any time)</legend>
+      <div class="days" id="days"></div>
+      <div class="grid">
+        <div>
+          <label for="start">From</label>
+          <input id="start" type="time" value="09:00">
+        </div>
+        <div>
+          <label for="end">Until</label>
+          <input id="end" type="time" value="18:00">
+        </div>
+        <div>
+          <label for="tz">Time zone</label>
+          <input id="tz" list="zones">
+          <datalist id="zones"></datalist>
+        </div>
+      </div>
+      <p class="hint">A window that ends before it starts runs past midnight. Same start and end means the whole day.</p>
+    </fieldset>
+
+    <div class="grid" id="countRow">
+      <div>
+        <label for="count">How many keys</label>
+        <input id="count" type="number" min="1" max="20" step="1" value="1">
+      </div>
+    </div>
 
     <button id="submit">Create key</button>
     <div class="err" id="err"></div>
@@ -151,6 +201,9 @@
       <div class="row"><span>API key:</span> <code id="outKey"></code><button type="button" class="copy" data-copy="outKey">copy</button></div>
       <div class="row"><span>Claude Code <code>settings.json</code> (Anthropic-compatible providers):</span><button type="button" class="copy" data-copy="outSettings">copy</button></div>
       <pre><code id="outSettings"></code></pre>
+    </div>
+    <div class="result" id="batch">
+      <div class="head"><span id="batchText"></span><button type="button" class="secondary small" id="batchCsv">Download keys CSV</button></div>
     </div>
   </form>
 
@@ -165,6 +218,7 @@
         <tbody id="list"></tbody>
       </table>
     </div>
+    <button type="button" class="secondary" id="more" hidden>Load more keys</button>
   </div>
 
   <div class="card">
@@ -173,7 +227,8 @@
       <a class="hint" href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">Anthropic pricing page</a>
     </div>
     <p class="hint">A row prices every model whose name contains its text (dots count as dashes); the longest match wins. "Long above" is a prompt size in tokens past which every rate is multiplied by "Long ×"; "Fast ×" applies to fast-mode requests. Both are optional. Changes apply to new requests within a minute.</p>
-    <div class="scroll">
+    <input id="priceFilter" placeholder="Filter prices by model name" aria-label="Filter prices" style="margin-top: 12px">
+    <div class="scroll" style="max-height: 520px; overflow-y: auto; margin-top: 8px">
       <table id="prices">
         <thead><tr><th>Model name contains</th><th>Input</th><th>Output</th><th>Cache read</th><th>5m write</th><th>1h write</th><th>Long above</th><th>Long ×</th><th>Fast ×</th><th></th></tr></thead>
         <tbody></tbody>
@@ -182,10 +237,22 @@
     <div class="bar">
       <button type="button" class="secondary" id="addPrice">Add row</button>
       <button type="button" class="secondary" id="resetPrices">Restore defaults</button>
+      <button type="button" class="secondary" id="importOpenRouter">Import OpenRouter prices</button>
       <button type="button" id="savePrices">Save prices</button>
     </div>
     <div class="err" id="priceErr"></div>
     <div class="msg" id="priceMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Sign-in</h2>
+    <p class="hint" id="authHint"></p>
+    <ul class="plain" id="passkeys"></ul>
+    <div class="bar">
+      <input id="passkeyName" placeholder="Name for this passkey, e.g. laptop" style="flex: 1; min-width: 180px; margin-top: 16px" aria-label="Passkey name">
+      <button type="button" id="addPasskey">Add a passkey</button>
+    </div>
+    <div class="err" id="passkeyErr"></div>
   </div>
 </main>
 <script>
@@ -280,6 +347,10 @@
 
   let editing = null;
   let copying = null;
+  const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  $("days").append(...DAY_NAMES.map((d, i) => el("label", {}, el("input", { type: "checkbox", value: i }), d)));
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  $("zones").append(...(Intl.supportedValuesOf?.("timeZone") || []).map((z) => el("option", { value: z })));
   let keys = [];
   const NUMBERS = ["capUsd", "capTokens", "rpm", "maxOutput"];
   function resetForm() {
@@ -291,6 +362,9 @@
     $("formTitle").textContent = "New key";
     $("submit").textContent = "Create key";
     $("cancel").hidden = true;
+    $("countRow").hidden = false;
+    $("tz").value = browserZone;
+    $("batch").style.display = "none";
     selected.clear();
     available = [];
     renderModels();
@@ -310,6 +384,11 @@
     for (const f of NUMBERS) $(f).value = k[f] ?? "";
     $("period").value = k.period || "total";
     $("ips").value = (k.ips || []).join(", ");
+    $("downAt").value = k.downgrade?.at ?? "";
+    $("downMap").value = (k.downgrade?.map || []).map(([a, b]) => `${a} => ${b}`).join("\n");
+    for (const box of $("days").querySelectorAll("input")) box.checked = !!k.hours?.days.includes(Number(box.value));
+    if (k.hours) [$("start").value, $("end").value, $("tz").value] = [k.hours.start, k.hours.end, k.hours.tz];
+    $("countRow").hidden = !copy;
     for (const m of k.models || []) if (!m.endsWith("*")) selected.add(m);
     $("patterns").value = (k.models || []).filter((m) => m.endsWith("*")).join(", ");
     $("formTitle").textContent = (copy ? "New key, copied from " : "Edit ") + (k.label || k.id);
@@ -333,6 +412,12 @@
       ips: list("ips", /[\s,]+/),
       models: [...selected, ...list("patterns", ",")],
     };
+    const days = [...$("days").querySelectorAll("input:checked")].map((b) => Number(b.value));
+    payload.hours = days.length ? { days, start: $("start").value, end: $("end").value, tz: $("tz").value.trim() } : null;
+    const rules = $("downMap").value.split("\n").map((l) => l.split("=>").map((x) => x.trim())).filter((p) => p[0]);
+    if (rules.some((p) => p.length !== 2 || !p[1])) return ($("err").textContent = "Write each downgrade rule as: requested model => cheaper model");
+    payload.downgrade = $("downAt").value || rules.length ? { at: Number($("downAt").value), map: rules } : null;
+    if (!editing) payload.count = Number($("count").value) || 1;
     for (const f of NUMBERS) payload[f] = $(f).value === "" ? null : Number($(f).value);
     if ($("key").value.trim()) payload.key = $("key").value.trim();
     else if (copying) payload.from = copying.id;
@@ -346,6 +431,12 @@
     if (editing) {
       resetForm();
       $("msg").textContent = "Saved changes to " + (data.label || data.id) + ".";
+    } else if (data.keys) {
+      batchKeys = data.keys;
+      $("result").style.display = "none";
+      $("batchText").textContent = `Created ${data.keys.length} keys. Download them now; the list below shows them too.`;
+      $("batch").style.display = "block";
+      $("key").value = "";
     } else {
       $("outBase").textContent = endpoint;
       $("outKey").textContent = data.id;
@@ -359,19 +450,6 @@
     load();
   };
 
-  function limits(k) {
-    const per = k.period === "month" ? " per month" : "";
-    const models = k.models || [];
-    return [
-      k.auth && k.auth !== "bearer" ? "header " + k.auth : "",
-      k.capUsd ? `cap $${k.capUsd}${per}` : "",
-      k.capTokens ? `cap ${k.capTokens.toLocaleString()} tokens${per}` : "",
-      k.rpm ? `${k.rpm} requests/min` : "",
-      k.maxOutput ? `max ${k.maxOutput.toLocaleString()} output tokens` : "",
-      models.length ? "models: " + (models.length > 3 ? models.slice(0, 3).join(", ") + ` +${models.length - 3} more` : models.join(", ")) : "",
-      k.ips?.length ? "IPs: " + k.ips.join(", ") : "",
-    ].filter(Boolean).join("\n") || "none";
-  }
   function usage(u) {
     const total = Object.entries(u.total || {});
     if (!total.length) return "none";
@@ -381,43 +459,71 @@
       total.map(([m, x]) => `${m}: ${x.priced ? usd(x.cost) : "unpriced"} (${x.requests} req, ${x.input.toLocaleString()} in / ${x.output.toLocaleString()} out)`).join("\n");
   }
 
-  async function load() {
-    keys = await (await fetch("/admin/keys")).json();
-    keys.sort((a, b) => Date.parse(b.expires) - Date.parse(a.expires));
-    $("list").replaceChildren(...(keys.length ? [] : [el("tr", {}, el("td", { colSpan: 6, className: "empty", textContent: "No keys" }))]));
-    for (const k of keys) {
-      const id = el("td", { className: "id" }, ...(k.label ? [el("strong", { textContent: k.label, style: "font-family: system-ui, sans-serif" }), el("br")] : []), k.id);
-      const exp = el("td", { textContent: new Date(k.expires).toLocaleString() });
-      if (!k.active) exp.append(el("div", { className: "tag", textContent: "expired" }));
-      const actions = el("td");
-      if (k.active) {
-        actions.append(
-          el("button", { className: "ghost plain", textContent: "Edit", onclick: () => editKey(k) }), el("br"),
-          el("button", { className: "ghost plain", textContent: "Duplicate", onclick: () => editKey(k, true) }), el("br"),
-          el("button", {
-            className: "ghost plain",
-            textContent: "Reset usage",
-            onclick: async () => {
-              if (!confirm("Reset the usage totals of " + (k.label || k.id) + "? Its caps start counting from zero.")) return;
-              await fetch(`/admin/keys/${k.id}/usage`, { method: "DELETE" });
-              load();
-            },
-          }), el("br"));
-      }
-      actions.append(el("button", {
-        className: "ghost",
-        textContent: k.active ? "Revoke" : "Delete",
-        onclick: async () => {
-          if (!confirm((k.active ? "Revoke " : "Delete ") + (k.label || k.id) + "? This cannot be undone.")) return;
-          await fetch("/admin/keys/" + k.id, { method: "DELETE" });
-          if (editing?.id === k.id) resetForm();
-          load();
-        },
-      }));
-      $("list").append(el("tr", {}, id, el("td", { textContent: k.base }), exp,
-        el("td", { className: "multi", textContent: limits(k) }), el("td", { className: "multi", textContent: usage(k.usage) }), actions));
+  let cursor = null;
+  const fetchKeys = async (from) => (await fetch("/admin/keys" + (from ? "?cursor=" + encodeURIComponent(from) : ""))).json();
+  const full = async (k) => {
+    const res = await fetch("/admin/keys/" + k.id);
+    return res.ok ? res.json() : Promise.reject(new Error("could not load " + k.id));
+  };
+  async function load(more) {
+    if (!more) {
+      keys = [];
+      $("list").replaceChildren();
     }
+    const page = await fetchKeys(more ? cursor : null);
+    cursor = page.cursor;
+    $("more").hidden = !cursor;
+    keys.push(...page.keys);
+    if (!keys.length) $("list").replaceChildren(el("tr", {}, el("td", { colSpan: 6, className: "empty", textContent: "No keys" })));
+    for (const k of page.keys) $("list").append(keyRow(k));
   }
+  $("more").onclick = () => load(true);
+  const action = (text, onclick, danger) => [el("button", { className: danger ? "ghost" : "ghost plain", textContent: text, onclick }), el("br")];
+  function keyRow(k) {
+    const id = el("td", { className: "id" }, ...(k.label ? [el("strong", { textContent: k.label, style: "font-family: system-ui, sans-serif" }), el("br")] : []), k.id);
+    const exp = el("td", { textContent: new Date(k.expires).toLocaleString() });
+    if (!k.active) exp.append(el("div", { className: "tag", textContent: "expired" }));
+    const actions = el("td");
+    if (k.active) {
+      actions.append(
+        ...action("Edit", async () => editKey(await full(k))),
+        ...action("Duplicate", async () => editKey(await full(k), true)),
+        ...action("Share link", async () => {
+          try {
+            const { url, expires } = await send(`/admin/keys/${k.id}/share`, "POST", {});
+            prompt(`One-time link for ${k.label || k.id}. It shows the key once and stops working after ${new Date(expires).toLocaleString()}.`, url);
+          } catch (e) {
+            alert(e.message);
+          }
+        }),
+        ...action("Reset usage", async () => {
+          if (!confirm("Reset the usage totals of " + (k.label || k.id) + "? Its caps start counting from zero.")) return;
+          await fetch(`/admin/keys/${k.id}/usage`, { method: "DELETE" });
+          load();
+        }),
+      );
+    }
+    actions.append(el("button", {
+      className: "ghost",
+      textContent: k.active ? "Revoke" : "Delete",
+      onclick: async () => {
+        if (!confirm((k.active ? "Revoke " : "Delete ") + (k.label || k.id) + "? This cannot be undone.")) return;
+        await fetch("/admin/keys/" + k.id, { method: "DELETE" });
+        if (editing?.id === k.id) resetForm();
+        load();
+      },
+    }));
+    return el("tr", {}, id, el("td", { textContent: k.base }), exp,
+      el("td", { className: "multi", textContent: k.limits || "" }), el("td", { className: "multi", textContent: usage(k.usage) }), actions);
+  }
+
+  let batchKeys = [];
+  const download = (name, rows) => {
+    const a = el("a", { href: URL.createObjectURL(new Blob([rows.map((r) => r.map(cell).join(",")).join("\n") + "\n"], { type: "text/csv" })), download: name });
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  $("batchCsv").onclick = () => download("key-router-keys.csv", [["label", "key", "endpoint", "expires"], ...batchKeys.map((k) => [k.label, k.id, endpoint, k.expires])]);
 
   // Cells starting with = + - @ are prefixed so spreadsheets do not run them as formulas.
   const cell = (v) => {
@@ -425,9 +531,16 @@
     if (/^[=+\-@]/.test(s)) s = "'" + s;
     return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
   };
-  $("export").onclick = () => {
+  $("export").onclick = async () => {
+    const all = [];
+    let from = null;
+    do {
+      const page = await fetchKeys(from);
+      all.push(...page.keys);
+      from = page.cursor;
+    } while (from);
     const rows = [["key", "label", "month", "model", "requests", "input_tokens", "output_tokens", "cost_usd", "priced"]];
-    for (const k of keys) {
+    for (const k of all) {
       for (const [month, models] of Object.entries(k.usage.months || {}).sort()) {
         for (const [model, u] of Object.entries(models)) rows.push([k.id, k.label || "", month, model, u.requests, u.input, u.output, u.cost.toFixed(6), u.priced]);
       }
@@ -438,12 +551,7 @@
         if (less("requests") > 0) rows.push([k.id, k.label || "", "before monthly tracking", model, less("requests"), less("input"), less("output"), less("cost").toFixed(6), t.priced]);
       }
     }
-    const a = el("a", {
-      href: URL.createObjectURL(new Blob([rows.map((r) => r.map(cell).join(",")).join("\n") + "\n"], { type: "text/csv" })),
-      download: `key-router-usage-${new Date().toISOString().slice(0, 10)}.csv`,
-    });
-    a.click();
-    URL.revokeObjectURL(a.href);
+    download(`key-router-usage-${new Date().toISOString().slice(0, 10)}.csv`, rows);
   };
 
   const PRICE_COLS = ["match", "in", "out", "read", "write5m", "write1h", "longAbove", "longScale", "fast"];
@@ -463,8 +571,29 @@
   }
   const readPrices = () => [...$("prices").tBodies[0].rows].map((tr) =>
     Object.fromEntries([...tr.querySelectorAll("input")].map((i) => [i.dataset.col, i.dataset.col === "match" ? i.value : i.value === "" ? null : Number(i.value)])));
-  $("addPrice").onclick = () => renderPrices([...readPrices(), { match: "" }]);
+  const filterPrices = () => {
+    const q = $("priceFilter").value.trim().toLowerCase();
+    for (const tr of $("prices").tBodies[0].rows) tr.hidden = !!q && !tr.querySelector("input").value.toLowerCase().includes(q);
+  };
+  $("priceFilter").oninput = filterPrices;
+  $("addPrice").onclick = () => {
+    $("priceFilter").value = "";
+    renderPrices([...readPrices(), { match: "" }]);
+    $("prices").tBodies[0].lastElementChild.querySelector("input").focus();
+  };
   $("resetPrices").onclick = () => renderPrices(structuredClone(defaults));
+  $("importOpenRouter").onclick = async () => {
+    $("priceErr").textContent = $("priceMsg").textContent = "";
+    try {
+      const imported = (await send("/admin/prices/openrouter", "GET")).prices;
+      const names = new Set(imported.map((r) => r.match));
+      renderPrices([...readPrices().filter((r) => !names.has(r.match)), ...imported]);
+      filterPrices();
+      $("priceMsg").textContent = `Added or updated ${imported.length} OpenRouter models. Review them, then save. OpenRouter's own reported cost is used for its requests when available.`;
+    } catch (e) {
+      $("priceErr").textContent = e.message;
+    }
+  };
   $("savePrices").onclick = async () => {
     $("priceErr").textContent = $("priceMsg").textContent = "";
     try {
@@ -479,6 +608,62 @@
     defaults = data.defaults;
     renderPrices(data.prices);
   })();
+
+  async function loadAuth() {
+    const status = await (await fetch("/admin/status")).json();
+    $("plaintext").hidden = status.encrypted;
+    $("signout").hidden = !status.passkeys;
+    $("authHint").textContent = status.passkeys
+      ? "Passkeys are required to sign in. The admin password no longer works" + (status.passwordFallback ? ", except that ALLOW_PASSWORD is set, so it still does." : ". Keep at least two passkeys so losing one does not lock you out.")
+      : "You sign in with the admin password. Add a passkey to sign in with your fingerprint, face or a security key instead; the password then stops working.";
+    const list = await (await fetch("/admin/passkeys")).json();
+    $("passkeys").replaceChildren(...list.map((p) => el("li", {},
+      el("span", { textContent: `${p.name} (added ${new Date(p.created).toLocaleDateString()})` }),
+      el("button", {
+        className: "ghost",
+        textContent: "Remove",
+        onclick: async () => {
+          if (!confirm(`Remove the passkey "${p.name}"?` + (list.length === 1 ? " The admin password will work again." : ""))) return;
+          await fetch("/admin/passkeys/" + p.id, { method: "DELETE" });
+          loadAuth();
+        },
+      }))));
+  }
+  const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  const unb64u = (s) => Uint8Array.from(atob(s.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
+  $("addPasskey").onclick = async () => {
+    $("passkeyErr").textContent = "";
+    try {
+      const o = await send("/admin/passkeys/options", "POST", {});
+      const cred = await navigator.credentials.create({ publicKey: {
+        challenge: unb64u(o.challenge),
+        rp: o.rp,
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: "admin", displayName: "Key Router admin" },
+        pubKeyCredParams: [-7, -8, -257].map((alg) => ({ type: "public-key", alg })),
+        authenticatorSelection: { residentKey: "required", userVerification: "required" },
+        excludeCredentials: o.exclude.map((id) => ({ type: "public-key", id: unb64u(id) })),
+        timeout: 60000,
+      } });
+      const r = cred.response;
+      if (!r.getPublicKey) throw new Error("This browser cannot register passkeys here; try a current Chrome, Edge, Safari or Firefox.");
+      await send("/admin/passkeys", "POST", {
+        id: cred.id,
+        clientDataJSON: b64u(r.clientDataJSON),
+        publicKey: b64u(r.getPublicKey()),
+        alg: r.getPublicKeyAlgorithm(),
+        name: $("passkeyName").value.trim() || "Passkey",
+      });
+      $("passkeyName").value = "";
+      loadAuth();
+    } catch (e) {
+      $("passkeyErr").textContent = e.name === "NotAllowedError" ? "Passkey creation was cancelled or timed out." : e.message;
+    }
+  };
+  $("signout").onclick = async () => {
+    await fetch("/admin/logout", { method: "POST" });
+    location.reload();
+  };
+  loadAuth();
 
   document.querySelectorAll("[data-copy]").forEach((b) => (b.onclick = async () => {
     await navigator.clipboard.writeText($(b.dataset.copy).textContent);

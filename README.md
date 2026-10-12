@@ -33,7 +33,8 @@ Everything runs on the Cloudflare free plan. No server or credit card is needed,
    - On a brand-new account, you are asked to pick a `workers.dev` subdomain. It becomes part of your URL.
    - The KV store that holds keys is created automatically.
    - The worker is deployed and its URL is printed, for example `https://ai-gateway.<your-subdomain>.workers.dev`.
-   - Finally you are asked for an admin password. Choose a long one; it protects the admin page.
+   - You are asked for an admin password. Choose a long one; it protects the admin page until you add a passkey.
+   - Finally you are asked for an encryption key, which encrypts the real provider keys in storage. Paste a long random string, for example the output of `openssl rand -hex 32`, and do not lose it: keys encrypted with it cannot be read without it.
 
 3. Open `https://ai-gateway.<your-subdomain>.workers.dev/admin`, sign in with any username and the password from step 2, and create your first key.
 
@@ -45,6 +46,8 @@ The first request to a fresh deployment can return a Cloudflare error for up to 
 |---|---|
 | Update to the latest version | `git pull` then `npm run deploy` |
 | Change the admin password | `npx wrangler secret put ADMIN_PASSWORD`, or the worker's Variables and Secrets in the dashboard |
+| Add encryption to an older deployment | `npx wrangler secret put ENCRYPTION_KEY`; keys are encrypted the next time they are created or edited |
+| Sign in after losing every passkey | `npx wrangler secret put ALLOW_PASSWORD` with the value `true`, sign in with the password, add a passkey, then `npx wrangler secret delete ALLOW_PASSWORD` |
 | Use a different worker name | `npx wrangler deploy --name <name>`, then run `npx wrangler secret put ADMIN_PASSWORD --name <name>` |
 | Deploy to another Cloudflare account | `npx wrangler logout`, then `npm run setup` |
 | Remove everything | `npx wrangler delete`, then delete the KV namespace under Storage & Databases > KV in the dashboard |
@@ -58,15 +61,30 @@ Open `https://<worker>.workers.dev/admin` and sign in with the admin password (t
 1. Pick a provider. Presets fill in the base URL and auth header for Anthropic, OpenAI, Google Gemini, DeepSeek, xAI, Mistral, Groq, Cerebras, Together AI, Fireworks AI, Moonshot, Zhipu, Alibaba Qwen, Cohere and OpenRouter. For anything else choose Custom endpoint and enter the base URL exactly as the provider's docs give it; the real key can be sent as `Authorization: Bearer` (most providers), `x-api-key` (Anthropic), `api-key` (Azure) or `x-goog-api-key` (Gemini).
 2. Enter the real API key and an expiry, and optionally a label.
 3. Optionally restrict models: Load models from provider lists everything the provider's `<base>/models` endpoint returns for that key, and the boxes you tick become the only models the gateway key may use. Extra patterns take names by hand, and a trailing `*` matches a prefix (`claude-haiku-*`). With nothing ticked and no patterns, every model is allowed.
-4. Optionally set limits, all empty by default:
+4. Optionally set limits and restrictions, all empty by default:
    - Spend cap in USD and token cap (input plus output tokens), counted over the key's lifetime or per calendar month (UTC). Once reached, requests get `429`.
    - Requests per minute; extra requests get `429`.
    - Max output tokens per request. Larger `max_tokens`, `max_completion_tokens` or `max_output_tokens` values are lowered to it, and Chat Completions and Responses calls that set none get it added.
    - Allowed client IPs, as addresses or CIDR ranges, IPv4 or IPv6. Calls from anywhere else get `403`.
+   - A downgrade: once a key has used a set percentage of its spend or token cap, new requests for a model are rewritten to a cheaper one, using rules such as `claude-opus-* => claude-sonnet-5-5`. Requests already running finish on their original model, and rerouted responses carry an `x-gateway-downgrade` header naming the switch. Only JSON request bodies are rewritten.
+   - A time window: the days of the week and the hours, in any time zone, when the key works. A window ending before it starts runs past midnight. Outside it, requests get `403`.
+5. Optionally create up to 20 keys at once with the same settings. They are numbered after the label, and Download keys CSV saves them all.
 
 The page returns the endpoint and gateway key to hand out. Edit changes any setting of an active key, including its expiry, endpoint and real key (leave the key empty to keep it). Duplicate starts a new key with the same settings and, unless you enter another, the same real key. Reset usage clears a key's totals so its caps count from zero. Keys expire on their own.
 
 A key with a model list also gets a filtered `GET /v1/models`, so clients only see the models they may use.
+
+### Handing keys out
+
+Share link makes a one-time link for a key instead of pasting the key into a chat. The link opens a page with a Reveal key button that shows the endpoint, the key and a Claude Code `settings.json`, then stops working. Link previews in chat apps cannot use it up, because revealing takes a button press. A link lasts 24 hours or until its key expires, whichever is sooner, and dies if the key is revoked.
+
+Key holders can check their own spend, remaining budget, limits and allowed models at `https://<worker>.workers.dev/usage`, by pasting the key into the page or by calling `GET /usage` with the key in any of the usual headers.
+
+## Signing in
+
+The admin page starts out protected by the admin password. Under Sign-in you can add passkeys, which use your fingerprint, face, phone or a security key. Once one exists the password stops working and the sign-in page asks for a passkey; sessions last 12 hours. Add at least two passkeys, for example a laptop and a phone, so losing one does not lock you out. Removing the last passkey brings the password back, and the `ALLOW_PASSWORD` secret described above does the same if every passkey is lost.
+
+Passkeys belong to the address you register them on, so a passkey made on `ai-gateway.<subdomain>.workers.dev` does not work on a custom domain.
 
 ## Client configuration
 
@@ -101,18 +119,19 @@ Prices are edited in the Prices section of the admin page. A row prices every mo
 - Streamed Chat Completions only report usage when the provider sends it; add `"stream_options": {"include_usage": true}` to the request if yours does not by default.
 - Caps are checked before each request, so requests already in flight when a cap is reached can go slightly past it. Unpriced models count toward the token cap but not the spend cap.
 - Figures are list-price estimates. Discounts and batch pricing are not modelled, so treat them as a monitor, not an invoice.
+- For keys pointing at OpenRouter, the cost OpenRouter reports in its response is used instead of the price table. Import OpenRouter prices fills the table with every OpenRouter model's list price, to review and save.
 
 ## Revoking
 
 Use the Revoke button on the admin page, or delete the entry under Storage & Databases > KV in the Cloudflare dashboard. Revocation can take up to a minute to reach every edge location.
 
-When a key expires, the real provider key is erased from storage. The gateway key stays listed as expired for 30 days so its spend can still be read, then it is removed along with its totals.
+Real provider keys are encrypted with AES-GCM under the `ENCRYPTION_KEY` secret, bound to their gateway key, so a copy of the KV store is useless without the secret. The admin page warns when the secret is missing; keys are then stored as plain text. When a key expires, the real provider key is erased from storage. The gateway key stays listed as expired for 30 days so its spend can still be read, then it is removed along with its totals.
 
 ## Limits
 
-The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request, and keys with a cap or rate limit make one more. Listing keys on the admin page reads each key once. Malformed keys are rejected before any KV read. Workers Paid raises this to 10 million per month.
+The Workers free plan allows 100,000 requests per day per account, shared by all of its workers, and resets at 00:00 UTC. Each proxied call uses one request and one KV read; metered calls also make one Durable Object request, and keys with a cap or rate limit make one more. The admin page lists keys 20 at a time and creates at most 20 at once, because the free plan allows 50 subrequests per request. Malformed keys are rejected before any KV read. Workers Paid raises this to 10 million per month.
 
-The gateway does not cap spend, so set credit limits on the provider side. Real keys are stored in Workers KV and are never returned by the admin API.
+Spend caps are estimates that can be overshot by requests in flight, so also set credit limits on the provider side. Real keys are stored in Workers KV and are never returned by the admin API or shown in the browser.
 
 ## Tests
 

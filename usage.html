@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Key usage</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f6f4; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dc; --accent: #2f5bea; --danger: #c43c2b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1f1f1d; --text: #ececE8; --muted: #9a9a93; --line: #33332f; --accent: #7d9bff; --danger: #ff7a68; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 48px 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+  input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  button { margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  button.copy { background: none; color: var(--accent); margin: 0 0 0 6px; padding: 0 4px; }
+  .err { color: var(--danger); margin-top: 12px; }
+  .row { display: flex; align-items: baseline; gap: 4px; margin: 6px 0; }
+  .row > span { white-space: nowrap; color: var(--muted); }
+  .row code { overflow-wrap: anywhere; }
+  code { font: 13px ui-monospace, monospace; }
+  pre { margin: 6px 0 0; padding: 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 16px 0 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; background: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Key usage</h1>
+  <p class="sub">Check what your gateway key has used and what it has left. The key is only sent to this gateway.</p>
+  <form class="card" id="form">
+    <label for="key">Gateway key</label>
+    <input id="key" autocomplete="off" placeholder="sk-gw-..." required>
+    <button>Check</button>
+    <div class="err" id="err"></div>
+    <dl id="out" hidden></dl>
+  </form>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const usd = (n) => "$" + n.toFixed(n && n < 0.01 ? 6 : 4);
+  const num = (n) => n.toLocaleString();
+  // The key may arrive in the fragment, which browsers never send to a server.
+  if (location.hash.length > 1) $("key").value = decodeURIComponent(location.hash.slice(1));
+  function row(term, value, share) {
+    const dd = Object.assign(document.createElement("dd"), { textContent: value });
+    if (share != null) {
+      const bar = Object.assign(document.createElement("div"), { className: "bar" });
+      bar.append(Object.assign(document.createElement("div"), { style: `width: ${Math.min(100, share * 100)}%` }));
+      dd.append(bar);
+    }
+    $("out").append(Object.assign(document.createElement("dt"), { textContent: term }), dd);
+  }
+  $("form").onsubmit = async (e) => {
+    e.preventDefault();
+    $("err").textContent = "";
+    $("out").replaceChildren();
+    $("out").hidden = true;
+    const res = await fetch("/usage", { headers: { authorization: "Bearer " + $("key").value.trim() } });
+    const u = await res.json();
+    if (!res.ok) return ($("err").textContent = u.error.message);
+    const per = u.period === "month" ? " this month" : "";
+    if (u.label) row("Label", u.label);
+    row("Status", u.active ? "active" : "expired or revoked");
+    row("Expires", new Date(u.expires).toLocaleString());
+    row("Spent" + per, usd(u.used.usd) + (u.limits.capUsd ? ` of $${u.limits.capUsd} (${usd(u.remaining.usd)} left)` : ""), u.limits.capUsd ? u.used.usd / u.limits.capUsd : null);
+    row("Tokens" + per, num(u.used.tokens) + (u.limits.capTokens ? ` of ${num(u.limits.capTokens)} (${num(u.remaining.tokens)} left)` : ""), u.limits.capTokens ? u.used.tokens / u.limits.capTokens : null);
+    if (u.limits.rpm) row("Rate limit", `${u.limits.rpm} requests per minute`);
+    if (u.limits.maxOutput) row("Max output", `${num(u.limits.maxOutput)} tokens per request`);
+    row("Models", u.models.length ? u.models.join(", ") : "any");
+    if (u.hours) row("Works", `${u.hours.days.map((d) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d]).join(", ")} ${u.hours.start}-${u.hours.end} (${u.hours.tz})`);
+    if (u.downgrade) row("Downgrade", `past ${u.downgrade.at}% of the cap: ` + u.downgrade.map.map(([a, b]) => `${a} to ${b}`).join(", "));
+    $("out").hidden = false;
+  };
+  if ($("key").value) $("form").requestSubmit();
+</script>
+</body>
+</html>

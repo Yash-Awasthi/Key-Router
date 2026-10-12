@@ -5,7 +5,7 @@
   "scripts": {
     "test": "node --test",
     "deploy": "npx wrangler deploy",
-    "setup": "npx wrangler deploy && npx wrangler secret put ADMIN_PASSWORD"
+    "setup": "npx wrangler deploy && npx wrangler secret put ADMIN_PASSWORD && npx wrangler secret put ENCRYPTION_KEY"
   },
   "license": "MIT"
 }
