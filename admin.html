@@ -16,9 +16,12 @@
   p.sub { color: var(--muted); margin: 0 0 24px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
   label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
-  input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
   button { margin-top: 16px; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   button.ghost { background: none; color: var(--danger); margin: 0; padding: 4px 8px; }
+  button.ghost.plain { color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); column-gap: 12px; }
+  .tag { color: var(--danger); font-size: 12px; }
   button.copy { background: none; color: var(--accent); margin: 0 0 0 6px; padding: 0 4px; }
   .result { display: none; margin-top: 16px; padding: 12px; border-radius: 6px; border: 1px dashed var(--accent); }
   .row { display: flex; align-items: center; gap: 4px; margin: 4px 0; overflow-wrap: anywhere; }
@@ -41,8 +44,35 @@
     <input id="base" placeholder="https://openrouter.ai/api/v1" required>
     <label for="key">Real API key</label>
     <input id="key" type="password" autocomplete="off" required>
-    <label for="expires">Expires</label>
-    <input id="expires" type="datetime-local" required>
+    <div class="grid">
+      <div>
+        <label for="auth">Send real key as</label>
+        <select id="auth">
+          <option value="bearer">Authorization: Bearer</option>
+          <option value="x-api-key">x-api-key (Anthropic)</option>
+          <option value="api-key">api-key (Azure)</option>
+          <option value="x-goog-api-key">x-goog-api-key (Gemini)</option>
+        </select>
+      </div>
+      <div>
+        <label for="expires">Expires</label>
+        <input id="expires" type="datetime-local" required>
+      </div>
+      <div>
+        <label for="label">Label (optional)</label>
+        <input id="label" maxlength="100">
+      </div>
+      <div>
+        <label for="cap">Spend cap, USD (optional)</label>
+        <input id="cap" type="number" min="0" step="any">
+      </div>
+      <div>
+        <label for="rpm">Requests per minute (optional)</label>
+        <input id="rpm" type="number" min="1" step="1">
+      </div>
+    </div>
+    <label for="models">Allowed models, comma separated, * at the end matches a prefix (optional)</label>
+    <input id="models" placeholder="claude-sonnet-*, claude-haiku-*">
     <button>Create key</button>
     <div class="err" id="err"></div>
     <div class="result" id="result">
@@ -55,7 +85,7 @@
 
   <div class="card">
     <table>
-      <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th>Usage</th><th></th></tr></thead>
+      <thead><tr><th>Key</th><th>Forwards to</th><th>Expires</th><th>Limits</th><th>Usage</th><th></th></tr></thead>
       <tbody id="list"></tbody>
     </table>
   </div>
@@ -66,37 +96,69 @@
   const pad = (n) => String(n).padStart(2, "0");
   const local = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   $("expires").value = local(new Date(Date.now() + 864e5));
+  const hostAuth = { "api.anthropic.com": "x-api-key", "generativelanguage.googleapis.com": "x-goog-api-key" };
+  $("base").oninput = () => {
+    let host = "";
+    try { host = new URL($("base").value.trim()).hostname; } catch {}
+    const style = hostAuth[host] || (host.endsWith(".openai.azure.com") ? "api-key" : null);
+    if (style) $("auth").value = style;
+  };
+  const cell = (text) => {
+    const td = document.createElement("td");
+    td.style.whiteSpace = "pre-line";
+    td.textContent = text;
+    return td;
+  };
+  const action = (text, cls, fn) => {
+    const b = document.createElement("button");
+    b.className = cls;
+    b.textContent = text;
+    b.onclick = fn;
+    return b;
+  };
+  async function send(path, method, body) {
+    const res = await fetch(path, { method, headers: { "content-type": "application/json" }, body: body && JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error.message);
+    return data;
+  }
 
   async function load() {
     const keys = await (await fetch("/admin/keys")).json();
     $("list").innerHTML = "";
-    if (!keys.length) $("list").innerHTML = '<tr><td colspan="5" class="empty">No active keys</td></tr>';
+    if (!keys.length) $("list").innerHTML = '<tr><td colspan="6" class="empty">No keys</td></tr>';
+    keys.sort((a, b) => Date.parse(b.expires) - Date.parse(a.expires));
     for (const k of keys) {
       const tr = document.createElement("tr");
-      for (const text of [k.id, k.base, new Date(k.expires).toLocaleString()]) {
-        const td = document.createElement("td");
-        td.textContent = text;
-        tr.append(td);
-      }
-      const use = document.createElement("td");
-      use.style.whiteSpace = "pre-line";
+      const active = Date.parse(k.expires) > Date.now();
+      tr.append(cell((k.label ? k.label + "\n" : "") + k.id), cell(k.base));
+      const exp = cell(new Date(k.expires).toLocaleString());
+      if (!active) exp.append(Object.assign(document.createElement("div"), { className: "tag", textContent: "expired" }));
+      tr.append(exp);
+      tr.append(cell([
+        k.auth && k.auth !== "bearer" ? "header " + k.auth : "",
+        k.cap ? `cap $${k.cap}` : "",
+        k.rpm ? `${k.rpm}/min` : "",
+        k.models?.length ? k.models.join(", ") : "",
+      ].filter(Boolean).join("\n") || "none"));
       const models = Object.entries(k.usage);
       const total = models.reduce((sum, [, u]) => sum + u.cost, 0);
-      use.textContent = models.length
+      tr.append(cell(models.length
         ? `Total $${total.toFixed(4)}\n` + models.map(([m, u]) =>
             `${m}: ${u.priced ? "$" + u.cost.toFixed(4) : "unpriced"} (${u.requests} req, ${u.input} in / ${u.output} out)`).join("\n")
-        : "none";
-      tr.append(use);
+        : "none"));
       const td = document.createElement("td");
-      const del = document.createElement("button");
-      del.className = "ghost";
-      del.textContent = "Revoke";
-      del.onclick = async () => {
-        if (!confirm("Revoke " + k.id + "?")) return;
+      if (active) td.append(action("Extend", "ghost plain", async () => {
+        const v = prompt("New expiry (YYYY-MM-DDTHH:MM, local time)", local(new Date(Date.parse(k.expires) + 864e5)));
+        if (!v) return;
+        try { await send("/admin/keys/" + k.id, "PATCH", { expires: new Date(v).toISOString() }); } catch (e) { alert(e.message); }
+        load();
+      }));
+      td.append(action(active ? "Revoke" : "Delete", "ghost", async () => {
+        if (!confirm((active ? "Revoke " : "Delete ") + k.id + "?")) return;
         await fetch("/admin/keys/" + k.id, { method: "DELETE" });
         load();
-      };
-      td.append(del);
+      }));
       tr.append(td);
       $("list").append(tr);
     }
@@ -105,13 +167,22 @@
   $("create").onsubmit = async (e) => {
     e.preventDefault();
     $("err").textContent = "";
-    const res = await fetch("/admin/keys", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ base: $("base").value.trim(), key: $("key").value.trim(), expires: new Date($("expires").value).toISOString() }),
-    });
-    const data = await res.json();
-    if (!res.ok) return ($("err").textContent = data.error.message);
+    const num = (id) => ($(id).value === "" ? null : Number($(id).value));
+    let data;
+    try {
+      data = await send("/admin/keys", "POST", {
+        base: $("base").value.trim(),
+        key: $("key").value.trim(),
+        expires: new Date($("expires").value).toISOString(),
+        auth: $("auth").value,
+        label: $("label").value.trim(),
+        cap: num("cap"),
+        rpm: num("rpm"),
+        models: $("models").value.split(",").map((m) => m.trim()).filter(Boolean),
+      });
+    } catch (err) {
+      return ($("err").textContent = err.message);
+    }
     $("outBase").textContent = endpoint;
     $("outKey").textContent = data.id;
     $("outSettings").textContent = JSON.stringify({
