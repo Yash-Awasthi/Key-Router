@@ -30,7 +30,9 @@ npm run setup
 - `ADMIN_PASSWORD`: protects the admin page until you add a passkey.
 - `ENCRYPTION_KEY`: encrypts real provider keys in storage. Use a long random value such as the output of `openssl rand -hex 32`, and keep a copy. Stored keys cannot be read without it.
 
-Then open `https://ai-gateway.<your-subdomain>.workers.dev/admin` and sign in with any username and the password. A fresh deployment can take a minute to respond.
+There are no sign-in attempt limits, so use a long random password. Then open `https://ai-gateway.<your-subdomain>.workers.dev/admin` and sign in with any username and the password. A fresh deployment can take a minute to respond.
+
+[DEPLOY.md](DEPLOY.md) is the full step-by-step guide, including custom domains, deploying from GitHub, rollbacks and troubleshooting.
 
 ## Create a key
 
@@ -74,7 +76,7 @@ A rerouted request's response has an `x-gateway-downgrade` header, for example `
 
 Successful calls to `/v1/messages`, `/v1/chat/completions` and `/v1/responses` are metered from the response's token counts. Prices are set in the admin page's Prices table, in USD per million tokens. The defaults are Anthropic's list prices for current Claude models, checked on 2026-10-12. A row matches any model whose name contains it, and the longest match wins. Import OpenRouter prices fills in every OpenRouter model, and for OpenRouter keys the cost OpenRouter reports is used directly. Models with no price are counted in tokens only.
 
-Caps are checked before each request, so calls already running can go slightly over. Set a credit limit with the provider as well.
+Caps are checked before each request, so calls already running can go slightly over. Only the three endpoints above count toward a cap: calls such as embeddings, images, audio, batches or Gemini's native `generateContent` pass through unmetered, and a spend cap does not limit models with no price (use a token cap or a model allowlist for those). Set a credit limit with the provider as well.
 
 ## Admin sign-in
 

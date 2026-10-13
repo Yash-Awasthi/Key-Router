@@ -641,3 +641,24 @@ test("passkeys replace the password", async () => {
   await req("/admin/passkeys/" + auth.id, { method: "DELETE", headers: { cookie: session } });
   assert.equal((await req("/admin/keys", { headers: adminAuth })).status, 200, "removing the last passkey restores the password");
 });
+
+test("streamed chat completions ask the provider for usage, so they are metered", async () => {
+  const { id } = await (await create({ base: "https://x.example", key: "k", expires: inAnHour })).json();
+  const bodyFor = async (payload) => {
+    await withUpstream(replying({}), () => req("/v1/chat/completions", { method: "POST", headers: bearer(id), body: JSON.stringify(payload) }));
+    return JSON.parse(typeof sent.init.body === "string" ? sent.init.body : new TextDecoder().decode(sent.init.body));
+  };
+  assert.deepEqual((await bodyFor({ model: "m", stream: true })).stream_options, { include_usage: true });
+  assert.deepEqual((await bodyFor({ model: "m", stream: true, stream_options: { foo: 1 } })).stream_options, { foo: 1, include_usage: true });
+  assert.equal((await bodyFor({ model: "m" })).stream_options, undefined);
+});
+
+test("Gemini's native output limit is clamped", async () => {
+  const { id } = await (await create({ base: "https://g.example/v1beta", key: "k", expires: inAnHour, auth: "x-goog-api-key", maxOutput: 100 })).json();
+  const bodyFor = async (payload) => {
+    await withUpstream(replying({}), () => req(`/v1/models/gemini-pro:generateContent?key=${id}`, { method: "POST", body: JSON.stringify(payload) }));
+    return JSON.parse(sent.init.body);
+  };
+  assert.equal((await bodyFor({ generationConfig: { maxOutputTokens: 5000, temperature: 1 } })).generationConfig.maxOutputTokens, 100);
+  assert.equal((await bodyFor({ contents: [] })).generationConfig.maxOutputTokens, 100);
+});

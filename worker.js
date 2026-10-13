@@ -397,7 +397,7 @@ async function proxy(req, env, url, ctx) {
   const path = url.pathname.replace(/^\/v1(?=\/|$)/, "");
   let body = req.body;
   let parsed;
-  if (req.method === "POST" && (route.models?.length || route.maxOutput || route.downgrade)) {
+  if (req.method === "POST" && (route.models?.length || route.maxOutput || route.downgrade || path === "/chat/completions")) {
     // Bytes, not text, so non-JSON uploads such as audio pass through unchanged.
     body = await req.arrayBuffer();
     try { parsed = JSON.parse(new TextDecoder().decode(body)); } catch {}
@@ -428,6 +428,15 @@ async function proxy(req, env, url, ctx) {
     for (const f of present) parsed[f] = Math.min(parsed[f], route.maxOutput);
     if (!present.length && path === "/responses") parsed.max_output_tokens = route.maxOutput;
     else if (!present.length && (path === "/chat/completions" || path === "/completions")) parsed.max_tokens = route.maxOutput;
+    else if (/:(stream)?generateContent$/.test(path)) {
+      const g = (parsed.generationConfig ||= {});
+      g.maxOutputTokens = Math.min(typeof g.maxOutputTokens === "number" ? g.maxOutputTokens : Infinity, route.maxOutput);
+    }
+    changed = true;
+  }
+  // OpenAI-style streams carry no token counts unless asked, and an unmetered call would slip past every cap.
+  if (path === "/chat/completions" && parsed?.stream === true && parsed.stream_options?.include_usage !== true) {
+    parsed.stream_options = { ...parsed.stream_options, include_usage: true };
     changed = true;
   }
   if (changed) body = JSON.stringify(parsed);
